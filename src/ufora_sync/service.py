@@ -210,7 +210,6 @@ class SyncService:
             )
             self._notify_log(summary)
 
-
             for cb in list(self.completion_listeners):
                 try:
                     cb(total_result)

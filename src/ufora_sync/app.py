@@ -438,9 +438,9 @@ class UforaSyncApp(ctk.CTk):
         ).pack(anchor="w", pady=(0, 24))
 
         # 4. Account & Authentication Management
-        ctk.CTkLabel(
-            form, text="Account & Session", font=FONT_HEADING, text_color=FG_TEXT
-        ).pack(anchor="w", pady=(0, 4))
+        ctk.CTkLabel(form, text="Account & Session", font=FONT_HEADING, text_color=FG_TEXT).pack(
+            anchor="w", pady=(0, 4)
+        )
 
         account_box = ctk.CTkFrame(form, fg_color=BG_CARD_ALT, corner_radius=8)
         account_box.pack(fill="x", pady=(0, 12))
@@ -525,9 +525,7 @@ class UforaSyncApp(ctk.CTk):
             self._user_badge.configure(text=display_user, text_color=ACCENT_GREEN)
             self._status_var.set("• Connected")
             self._status_label.configure(text_color=FG_MUTED)
-            self._account_label.configure(
-                text=f"Logged in as: {student_name or 'UGent Student'}"
-            )
+            self._account_label.configure(text=f"Logged in as: {student_name or 'UGent Student'}")
             self._courses_loading.configure(text="Loading courses from Ufora…")
             threading.Thread(target=self._fetch_courses_worker, daemon=True).start()
         else:
@@ -542,7 +540,6 @@ class UforaSyncApp(ctk.CTk):
                     "Click 'Sign In to UGent' above to connect your account."
                 )
             )
-
 
     def _fetch_courses_worker(self) -> None:
         try:
@@ -702,4 +699,3 @@ class UforaSyncApp(ctk.CTk):
 
     def _on_close(self) -> None:
         self.destroy()
-

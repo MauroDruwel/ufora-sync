@@ -150,7 +150,6 @@ class TrayApp:
         )
         self._icon.run()
 
-
     def run_detached(self) -> threading.Thread:
         """Run the tray icon in a dedicated background thread."""
         t = threading.Thread(target=self.run, daemon=True, name="UforaTrayThread")
@@ -160,7 +159,7 @@ class TrayApp:
     def stop(self) -> None:
         if self._icon:
             import contextlib
+
             with contextlib.suppress(Exception):
                 self._icon.stop()
             self._icon = None
-

@@ -215,5 +215,3 @@ def test_manifest_preserves_remote_modified(tmp_path: Path) -> None:
     assert entry is not None
     assert entry.remote_modified == "2026-09-28T12:00:00Z"
     assert entry.local_path == str(f)
-
-

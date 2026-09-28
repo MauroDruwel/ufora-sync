@@ -44,7 +44,6 @@ def test_config_save_and_load(tmp_path: Path, monkeypatch):
         AppConfig, "get_config_file", classmethod(lambda cls: tmp_path / "config.json")
     )
 
-
     cfg = AppConfig(
         sync_dir=str(tmp_path / "Courses"),
         interval_minutes=45,

@@ -81,5 +81,3 @@ def test_service_lock_prevents_concurrent_sync(monkeypatch, tmp_path: Path):
     assert not service.is_syncing
 
     external_lock.release()
-
-

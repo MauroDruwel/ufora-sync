@@ -54,7 +54,6 @@ def open_settings_gui() -> None:
     _gui_process = subprocess.Popen([sys.executable, "-m", "ufora_sync", "gui"])
 
 
-
 def run_desktop_app() -> None:
     """Run the system tray app on the main thread with background sync service."""
     from ufora_sync.tray import TrayApp
@@ -85,7 +84,6 @@ def run_desktop_app() -> None:
         _quit_all()
 
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ufora-sync",
@@ -110,9 +108,11 @@ def main() -> None:
         run_oneshot_sync()
     elif args.command == "login":
         import subprocess
+
         subprocess.run(["ufora", "login"])
     elif args.command == "gui":
         from ufora_sync.app import UforaSyncApp
+
         app = UforaSyncApp(is_standalone=True)
         app.mainloop()
     else:
