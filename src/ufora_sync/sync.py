@@ -617,8 +617,8 @@ def sync_course_all(
             if dest_path.exists():
                 is_edited = manifest.is_locally_edited(dest_path)
 
-                # If remote_modified matches, nothing changed on Ufora
-                if item.remote_modified and existing_entry.remote_modified == item.remote_modified:
+                # If remote_modified matches (or both are unset/identical), nothing changed
+                if existing_entry.remote_modified == item.remote_modified:
                     rel_str = str(dest_path.relative_to(course_dir))
                     if is_edited:
                         result.skipped_edited.append(rel_str)
@@ -697,5 +697,13 @@ def sync_course_all(
 
     if manifest_dirty:
         manifest.save()
+
+    if on_progress:
+        downloaded = len(result.downloaded)
+        skipped = len(result.skipped_exists) + len(result.skipped_edited)
+        if downloaded == 0 and skipped > 0:
+            on_progress(f"  ✓ All {skipped} file(s) are up to date.")
+        elif downloaded > 0:
+            on_progress(f"  Summary: {downloaded} downloaded, {skipped} up to date.")
 
     return result
