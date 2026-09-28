@@ -463,6 +463,51 @@ def sync_topics(
     return result
 
 
+@dataclass
+class FileTopic:
+    id: str
+    title: str
+    module_path: tuple[str, ...] = ()
+
+
+def fetch_course_file_topics(course_id: str) -> list[FileTopic]:
+    """Extract all downloadable file topics along with their exact Ufora module path."""
+    try:
+        from ufora_cli.materials import _client_and_resolver, _walk_topics
+
+        client, resolver = _client_and_resolver()
+        enrollment = resolver.resolve(str(course_id))
+        org_id = enrollment["OrgUnit"]["Id"]
+        toc = client.content_toc(org_id)
+        if not isinstance(toc, dict):
+            return []
+
+        file_topics: list[FileTopic] = []
+        for path_tuple, topic in _walk_topics(toc):
+            is_file = topic.get("TypeIdentifier") == "File" or topic.get("TopicType") == 1
+            if not is_file:
+                continue
+            tid = str(topic.get("TopicId") or topic.get("Id") or "")
+            if not tid:
+                continue
+            title = str(topic.get("Title") or f"topic-{tid}")
+            file_topics.append(FileTopic(id=tid, title=title, module_path=path_tuple))
+        return file_topics
+    except Exception:
+        try:
+            nodes = list_content(course_id)
+            return [
+                FileTopic(
+                    id=n.id,
+                    title=n.title,
+                    module_path=tuple(n.path.split("/")[:-1]) if "/" in n.path else (),
+                )
+                for n in collect_file_topics(nodes)
+            ]
+        except Exception:
+            return []
+
+
 def sync_course_all(
     course: CourseInfo,
     base_dir: Path,
@@ -470,29 +515,86 @@ def sync_course_all(
     config: SyncConfig | None = None,
     on_progress: Any = None,
 ) -> SyncResult:
-    """Download all file-backed materials for a complete course."""
+    """Download all file-backed materials for a complete course, preserving folder structure."""
     if on_progress:
         on_progress(f"Inspecting course tree: {course.name}…")
 
-    try:
-        nodes = list_content(course.id)
-    except Exception as exc:
-        res = SyncResult()
-        res.errors.append((course.id, f"Could not list course contents: {exc}"))
-        return res
-
-    file_topics = collect_file_topics(nodes)
+    file_topics = fetch_course_file_topics(course.id)
     if not file_topics:
         if on_progress:
             on_progress(f"No downloadable files found in {course.name}")
         return SyncResult()
 
-    topic_ids = [t.id for t in file_topics if t.id]
-    return sync_topics(
-        course.id,
-        topic_ids,
-        base_dir,
-        course_subfolder=course.folder_name,
-        config=config,
-        on_progress=on_progress,
-    )
+    cfg = config or SyncConfig()
+    result = SyncResult()
+    course_dir = base_dir / course.folder_name
+    course_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = SyncManifest(base_dir=course_dir)
+    manifest.load()
+
+    for item in file_topics:
+        topic_id = item.id
+        # Build target directory preserving Ufora module structure
+        target_folder = course_dir
+        for subfolder in item.module_path:
+            clean_subfolder = _sanitize_folder_name(subfolder)
+            target_folder = target_folder / clean_subfolder
+        target_folder.mkdir(parents=True, exist_ok=True)
+
+        if on_progress:
+            folder_display = " / ".join(item.module_path)
+            where_str = f" [{folder_display}]" if folder_display else ""
+            on_progress(f"Downloading item {topic_id}{where_str}…")
+
+        tmp_dir = course_dir / f"_tmp_{topic_id}"
+        try:
+            _run_ufora_download(course.id, topic_id, tmp_dir)
+        except RuntimeError as exc:
+            result.errors.append((topic_id, str(exc)))
+            if on_progress:
+                on_progress(f"  ✗ Error: {exc}")
+            continue
+
+        for src in sorted(tmp_dir.rglob("*")):
+            if not src.is_file():
+                continue
+
+            filename = src.name
+            dest = target_folder / filename
+            relative = dest.relative_to(course_dir)
+            remote_path = str(relative)
+
+            locally_edited = dest.exists() and manifest.is_locally_edited(dest)
+
+            if locally_edited:
+                strategy = cfg.conflict_strategy
+                if strategy == ConflictStrategy.SKIP:
+                    result.skipped_edited.append(str(relative))
+                    if on_progress:
+                        on_progress(f"  ↷ Kept local edit: {relative}")
+                    src.unlink()
+                    continue
+                elif strategy == ConflictStrategy.DUPLICATE:
+                    edited_dest = cfg.edited_path(dest)
+                    shutil.move(str(dest), str(edited_dest))
+                    result.skipped_edited.append(str(relative))
+                    if on_progress:
+                        on_progress(f"  ✎ Stashed edit → {edited_dest.name} | updated {relative}")
+                elif strategy == ConflictStrategy.OVERWRITE:
+                    result.skipped_edited.append(str(relative))
+                    if on_progress:
+                        on_progress(f"  ⚠ Overwrote local edit: {relative}")
+
+            shutil.copy2(src, dest)
+            manifest.record(topic_id, remote_path, dest)
+            result.downloaded.append(str(relative))
+            if on_progress and not locally_edited:
+                on_progress(f"  ✓ {relative}")
+            src.unlink()
+
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    manifest.save()
+    return result
+
