@@ -633,11 +633,23 @@ class UforaSyncApp(ctk.CTk):
             self._sync_dir_var.set(chosen)
 
     def _trigger_sync(self) -> None:
-        if self.service:
-            self._sync_now_btn.configure(state="disabled", text="Syncing…")
-            self.service.trigger_sync()
-        else:
-            self._append_log("Service not attached.")
+        self._sync_now_btn.configure(state="disabled", text="Syncing…")
+        self._append_log("Starting sync pass…")
+
+        active_service = self.service or SyncService(config=self.config)
+        active_service.add_log_listener(lambda t: self.after(0, self._append_log, t))
+        active_service.add_status_listener(lambda s: self.after(0, self._update_service_status, s))
+
+        def _worker():
+            try:
+                active_service._do_sync_pass()
+            finally:
+                self.after(
+                    0,
+                    lambda: self._sync_now_btn.configure(state="normal", text="🔄 Sync Now"),
+                )
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _update_service_status(self, status: str) -> None:
         self._status_var.set(f"• {status}")
@@ -689,9 +701,5 @@ class UforaSyncApp(ctk.CTk):
         self._log_text.delete("1.0", "end")
 
     def _on_close(self) -> None:
-        if self.is_standalone:
-            self.destroy()
-        else:
-            # Hide window, keep running in tray
-            self.withdraw()
-            self._append_log("Minimized to system tray / menu bar.")
+        self.destroy()
+

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 import time
 
@@ -41,55 +42,48 @@ def run_oneshot_sync() -> None:
     service._do_sync_pass()
 
 
+_gui_process: subprocess.Popen | None = None
+
+
+def open_settings_gui() -> None:
+    """Launch or focus the Settings GUI in a dedicated process."""
+    global _gui_process
+
+    if _gui_process is not None and _gui_process.poll() is None:
+        return
+    _gui_process = subprocess.Popen([sys.executable, "-m", "ufora_sync", "gui"])
+
+
+
 def run_desktop_app() -> None:
-    """Run the combined System Tray and Settings GUI application."""
-    from ufora_sync.app import UforaSyncApp
+    """Run the system tray app on the main thread with background sync service."""
     from ufora_sync.tray import TrayApp
 
     config = AppConfig.load()
     service = SyncService(config=config)
     service.start()
 
-    gui_window: UforaSyncApp | None = None
+    # If first run or no courses enabled yet, launch GUI so user can configure
+    if not config.enabled_courses:
+        open_settings_gui()
+    else:
+        print("Ufora Sync running in background menu bar / taskbar.")
 
     def _open_gui():
-        nonlocal gui_window
-        if gui_window:
-            gui_window.after(
-                0,
-                lambda: (
-                    gui_window.deiconify(),
-                    gui_window.lift(),
-                    gui_window.focus_force(),
-                ),
-            )
+        open_settings_gui()
 
     def _quit_all():
-        nonlocal gui_window
+        global _gui_process
+        if _gui_process and _gui_process.poll() is None:
+            _gui_process.terminate()
         service.stop()
-        if gui_window:
-            gui_window.after(0, gui_window.destroy)
 
-    # Initialize tray app in detached background thread
     tray = TrayApp(service=service, on_open_gui=_open_gui, on_quit=_quit_all)
-    tray.run_detached()
-
-    # Initialize GUI
-    gui_window = UforaSyncApp(service=service, is_standalone=False)
-
-    # Show window on initial launch if no courses are enabled yet
-    if not config.enabled_courses:
-        gui_window.deiconify()
-    else:
-        # User already configured courses: start minimized to menu bar / tray
-        gui_window.withdraw()
-        print("Ufora Sync started in background tray / menu bar.")
-
     try:
-        gui_window.mainloop()
+        tray.run()  # Native OS tray loop on the main thread
     finally:
-        tray.stop()
-        service.stop()
+        _quit_all()
+
 
 
 def main() -> None:
