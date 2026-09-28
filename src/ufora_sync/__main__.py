@@ -87,7 +87,10 @@ def run_desktop_app() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ufora-sync",
-        description="Cross-platform background sync service and tray application for UGent Ufora",
+        description=(
+            "Unofficial background sync service and tray application for UGent Ufora "
+            "(not affiliated with UGent or D2L)"
+        ),
     )
     parser.add_argument(
         "command",

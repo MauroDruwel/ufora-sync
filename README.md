@@ -11,6 +11,9 @@
 > **OneDrive-style background sync service and system tray application for UGent Ufora (Brightspace).**  
 > Automatically downloads course files, handouts, and slides to your PC. If you edit local files, your version is preserved while still fetching the professor's updates.
 
+> [!NOTE]
+> **Disclaimer:** Ufora Sync is an independent, student-built open-source project and is **not affiliated with, maintained by, or endorsed by Ghent University (UGent) or D2L (Brightspace)**. Ufora and Brightspace are trademarks of their respective owners and are referenced solely to describe service compatibility.
+
 Built for **macOS**, **Linux**, and **Windows**.
 
 ---
@@ -111,6 +114,12 @@ Example `config.json`:
 python3 -m pytest tests/ -v
 python3 -m ruff check .
 ```
+
+---
+
+## ⚖️ Disclaimer
+
+**Ufora Sync is not affiliated with, maintained by, or endorsed by Ghent University or D2L.** This is an unofficial, student-built open-source project. Ufora and Brightspace are referenced solely to identify the educational platform this project interoperates with.
 
 ---
 

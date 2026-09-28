@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ufora-sync"
 version = "0.2.0"
-description = "Cross-platform background sync service and tray application for UGent Ufora"
+description = "Unofficial background sync service and tray application for UGent Ufora"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

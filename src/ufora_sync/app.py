@@ -475,6 +475,19 @@ class UforaSyncApp(ctk.CTk):
             command=self._do_login,
         ).pack(side="right", padx=4, pady=12)
 
+        # 5. Unofficial Disclaimer Notice
+        ctk.CTkLabel(
+            form,
+            text=(
+                "Unofficial open-source tool • Not affiliated with or endorsed by "
+                "Ghent University (UGent) or D2L."
+            ),
+            font=FONT_SMALL,
+            text_color=FG_MUTED,
+            justify="left",
+            wraplength=600,
+        ).pack(anchor="w", pady=(16, 8))
+
     # ------------------------------------------------------------------
     # Logs Tab
     # ------------------------------------------------------------------
