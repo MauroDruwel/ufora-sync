@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ufora-sync"
+version = "0.2.0"
+description = "Cross-platform background sync service and tray application for UGent Ufora"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Mauro Druwel" }]
+keywords = ["ugent", "ufora", "sync", "brightspace", "education", "service", "tray"]
+dependencies = [
+  "customtkinter>=5.2.0",
+  "pillow>=10.0.0",
+  "pystray>=0.19.5",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.4",
+]
+
+[project.scripts]
+ufora-sync = "ufora_sync.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ufora_sync"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
