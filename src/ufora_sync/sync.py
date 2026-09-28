@@ -176,6 +176,49 @@ def check_auth_status() -> tuple[bool, str]:
         return False, f"Token error ({exc})"
 
 
+def get_student_name() -> str:
+    """Return the student's real name if authenticated, caching in ~/.d2l/profile.json."""
+    token_file = get_token_file()
+    if not token_file.exists():
+        return ""
+
+    profile_file = Path.home() / ".d2l" / "profile.json"
+    if profile_file.exists():
+        try:
+            p = json.loads(profile_file.read_text(encoding="utf-8"))
+            first = p.get("FirstName", "").strip()
+            last = p.get("LastName", "").strip()
+            if first or last:
+                return f"{first} {last}".strip()
+        except Exception:
+            pass
+
+    is_auth, _ = check_auth_status()
+    if is_auth:
+        try:
+            info = _run_ufora_json("whoami")
+            if isinstance(info, dict):
+                first = info.get("FirstName", "").strip()
+                last = info.get("LastName", "").strip()
+                name = f"{first} {last}".strip()
+                if name:
+                    import contextlib
+
+                    with contextlib.suppress(Exception):
+                        profile_file.write_text(json.dumps(info), encoding="utf-8")
+                    return name
+        except Exception:
+            pass
+
+
+    try:
+        data = json.loads(token_file.read_text(encoding="utf-8"))
+        return str(data.get("user_id") or data.get("sub") or "")
+    except Exception:
+        return ""
+
+
+
 def _ufora_exe() -> str:
     """Locate the installed `ufora` CLI executable."""
     exe = shutil.which("ufora")

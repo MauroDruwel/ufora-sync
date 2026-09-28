@@ -94,11 +94,11 @@ class TrayApp:
                     kind = "paused"
                 self._icon.icon = create_tray_icon_image(kind)
                 self._icon.title = f"Ufora Sync — {status}"
-                self._icon.update_menu()
             except Exception as e:
                 logger.debug("Failed updating tray icon: %s", e)
 
-    def _get_menu(self) -> Any:
+    def _get_menu_items(self) -> list[Any]:
+
         import pystray
 
         status_text = f"● {self._current_status}"
@@ -126,7 +126,7 @@ class TrayApp:
             if self.on_quit_callback:
                 self.on_quit_callback()
 
-        menu_items = [
+        return [
             pystray.MenuItem("🎓 Ufora Sync", lambda i, it: None, enabled=False),
             pystray.MenuItem(status_text, lambda i, it: None, enabled=False),
             pystray.Menu.SEPARATOR,
@@ -137,7 +137,6 @@ class TrayApp:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("🚪 Quit Ufora Sync", _action_quit),
         ]
-        return pystray.Menu(*menu_items)
 
     def run(self) -> None:
         """Run the tray icon event loop (blocking)."""
@@ -147,9 +146,10 @@ class TrayApp:
             name="ufora_sync",
             icon=create_tray_icon_image("idle"),
             title="Ufora Sync",
-            menu=self._get_menu,
+            menu=pystray.Menu(lambda: self._get_menu_items()),
         )
         self._icon.run()
+
 
     def run_detached(self) -> threading.Thread:
         """Run the tray icon in a dedicated background thread."""

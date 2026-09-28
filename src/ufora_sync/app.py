@@ -17,6 +17,7 @@ from ufora_sync.sync import (
     ConflictStrategy,
     CourseInfo,
     check_auth_status,
+    get_student_name,
     list_courses,
 )
 from ufora_sync.tray import open_folder_in_os
@@ -161,7 +162,7 @@ class UforaSyncApp(ctk.CTk):
         # State
         self._courses: list[CourseInfo] = []
         self._course_cards: dict[str, CourseCard] = {}
-        self._status_var = ctk.StringVar(value="Checking Ufora connection…")
+        self._status_var = ctk.StringVar(value="Connecting…")
         self._sync_dir_var = ctk.StringVar(value=self.config.sync_dir)
         self._interval_var = ctk.StringVar(value=f"{self.config.interval_minutes} minutes")
         self._strategy_var = ctk.StringVar(
@@ -182,7 +183,6 @@ class UforaSyncApp(ctk.CTk):
             )
             self.service.add_log_listener(lambda t: self.after(0, self._append_log, t))
 
-
     def _build_ui(self) -> None:
         # ── Top Bar ──────────────────────────────────────────────────
         top_bar = ctk.CTkFrame(self, fg_color=BG_CARD, height=64, corner_radius=0)
@@ -200,30 +200,39 @@ class UforaSyncApp(ctk.CTk):
             text_color=FG_TEXT,
         ).pack(side="left")
 
-        # Status badge
+        # User Badge (e.g. 👤 Mauro Druwel)
+        self._user_badge = ctk.CTkLabel(
+            top_bar,
+            text="",
+            font=FONT_BOLD,
+            text_color=ACCENT_GREEN,
+        )
+        self._user_badge.pack(side="left", padx=(14, 4), pady=16)
+
+        # Status text
         self._status_label = ctk.CTkLabel(
             top_bar,
             textvariable=self._status_var,
             font=FONT_SMALL,
             text_color=FG_MUTED,
         )
-        self._status_label.pack(side="left", padx=16, pady=16)
+        self._status_label.pack(side="left", padx=4, pady=16)
 
         # Quick action buttons
         actions = ctk.CTkFrame(top_bar, fg_color="transparent")
         actions.pack(side="right", padx=16, pady=12)
 
+        # Login button (ONLY shown when authentication is expired/missing)
         self._login_btn = ctk.CTkButton(
             actions,
-            text="🔑 Login",
-            width=80,
+            text="🔑 Sign In to UGent",
+            width=140,
             height=32,
-            font=FONT_BODY,
-            fg_color=BG_ITEM_HOVER,
-            hover_color="#3c3c5c",
+            font=FONT_BOLD,
+            fg_color=ACCENT_AMBER,
+            hover_color="#d97706",
             command=self._do_login,
         )
-        self._login_btn.pack(side="left", padx=4)
 
         self._sync_now_btn = ctk.CTkButton(
             actions,
@@ -314,8 +323,8 @@ class UforaSyncApp(ctk.CTk):
     # ------------------------------------------------------------------
 
     def _build_settings_tab(self, parent: Any) -> None:
-        form = ctk.CTkFrame(parent, fg_color="transparent")
-        form.pack(fill="both", expand=True, padx=20, pady=16)
+        form = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+        form.pack(fill="both", expand=True, padx=12, pady=8)
 
         # 1. Sync Directory
         ctk.CTkLabel(
@@ -416,7 +425,7 @@ class UforaSyncApp(ctk.CTk):
             text_color=FG_TEXT,
         ).pack(side="left")
 
-        # Save Button
+        # Save Settings Action
         ctk.CTkButton(
             form,
             text="💾 Save Settings",
@@ -426,7 +435,45 @@ class UforaSyncApp(ctk.CTk):
             fg_color=ACCENT,
             hover_color=ACCENT_HOVER,
             command=self._save_settings,
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=(0, 24))
+
+        # 4. Account & Authentication Management
+        ctk.CTkLabel(
+            form, text="Account & Session", font=FONT_HEADING, text_color=FG_TEXT
+        ).pack(anchor="w", pady=(0, 4))
+
+        account_box = ctk.CTkFrame(form, fg_color=BG_CARD_ALT, corner_radius=8)
+        account_box.pack(fill="x", pady=(0, 12))
+
+        self._account_label = ctk.CTkLabel(
+            account_box,
+            text="Checking session…",
+            font=FONT_BODY,
+            text_color=FG_TEXT,
+        )
+        self._account_label.pack(side="left", padx=16, pady=12)
+
+        ctk.CTkButton(
+            account_box,
+            text="Sign Out",
+            width=90,
+            height=28,
+            font=FONT_SMALL,
+            fg_color=BG_ITEM_HOVER,
+            hover_color=ACCENT_RED,
+            command=self._do_logout,
+        ).pack(side="right", padx=12, pady=12)
+
+        ctk.CTkButton(
+            account_box,
+            text="Refresh Session",
+            width=120,
+            height=28,
+            font=FONT_SMALL,
+            fg_color=BG_ITEM_HOVER,
+            hover_color="#3c3c5c",
+            command=self._do_login,
+        ).pack(side="right", padx=4, pady=12)
 
     # ------------------------------------------------------------------
     # Logs Tab
@@ -470,19 +517,32 @@ class UforaSyncApp(ctk.CTk):
 
     def _refresh_courses(self) -> None:
         is_auth, auth_msg = check_auth_status()
-        if not is_auth:
-            self._status_var.set(f"⚠ {auth_msg}")
-            self._status_label.configure(text_color=ACCENT_AMBER)
-            self._courses_loading.configure(
-                text=f"Authentication needed ({auth_msg}).\nClick 'Login' above to sign into UGent."
+        student_name = get_student_name() if is_auth else ""
+
+        if is_auth:
+            self._login_btn.pack_forget()
+            display_user = f"👤 {student_name}" if student_name else "👤 Logged In"
+            self._user_badge.configure(text=display_user, text_color=ACCENT_GREEN)
+            self._status_var.set("• Connected")
+            self._status_label.configure(text_color=FG_MUTED)
+            self._account_label.configure(
+                text=f"Logged in as: {student_name or 'UGent Student'}"
             )
-            return
+            self._courses_loading.configure(text="Loading courses from Ufora…")
+            threading.Thread(target=self._fetch_courses_worker, daemon=True).start()
+        else:
+            self._user_badge.configure(text="⚠ Session Expired", text_color=ACCENT_AMBER)
+            self._status_var.set(f"• {auth_msg}")
+            self._status_label.configure(text_color=ACCENT_AMBER)
+            self._login_btn.pack(side="left", padx=4)
+            self._account_label.configure(text="Session expired or not logged in.")
+            self._courses_loading.configure(
+                text=(
+                    "Authentication needed.\n"
+                    "Click 'Sign In to UGent' above to connect your account."
+                )
+            )
 
-        self._status_var.set(f"● {auth_msg}")
-        self._status_label.configure(text_color=ACCENT_GREEN)
-        self._courses_loading.configure(text="Loading courses from Ufora…")
-
-        threading.Thread(target=self._fetch_courses_worker, daemon=True).start()
 
     def _fetch_courses_worker(self) -> None:
         try:
@@ -505,7 +565,6 @@ class UforaSyncApp(ctk.CTk):
                 text="No enrolled courses found for this academic year."
             )
             self._courses_loading.pack(pady=40)
-
             return
 
         sync_dir = Path(self._sync_dir_var.get()).expanduser()
@@ -529,14 +588,16 @@ class UforaSyncApp(ctk.CTk):
     def _on_course_toggled(self, course_id: str, enabled: bool) -> None:
         self.config.toggle_course(course_id, enabled)
         self.config.save()
-        self._append_log(f"Course {course_id} sync set to {'ENABLED' if enabled else 'DISABLED'}")
+        status_word = "ENABLED" if enabled else "DISABLED"
+        self._append_log(f"Course {course_id} sync set to {status_word}")
 
     def _set_all_courses(self, enable: bool) -> None:
         for cid, card in self._course_cards.items():
             card.set_enabled(enable)
             self.config.toggle_course(cid, enable)
         self.config.save()
-        self._append_log(f"All courses set to {'ENABLED' if enable else 'DISABLED'}")
+        status_word = "ENABLED" if enable else "DISABLED"
+        self._append_log(f"All courses set to {status_word}")
 
     def _save_settings(self) -> None:
         self.config.sync_dir = self._sync_dir_var.get().strip()
@@ -579,7 +640,7 @@ class UforaSyncApp(ctk.CTk):
             self._append_log("Service not attached.")
 
     def _update_service_status(self, status: str) -> None:
-        self._status_var.set(f"● {status}")
+        self._status_var.set(f"• {status}")
         if "sync" in status.lower():
             self._status_label.configure(text_color=ACCENT)
             self._sync_now_btn.configure(state="disabled", text="Syncing…")
@@ -587,7 +648,7 @@ class UforaSyncApp(ctk.CTk):
             self._status_label.configure(text_color=ACCENT_RED)
             self._sync_now_btn.configure(state="normal", text="🔄 Sync Now")
         else:
-            self._status_label.configure(text_color=ACCENT_GREEN)
+            self._status_label.configure(text_color=FG_MUTED)
             self._sync_now_btn.configure(state="normal", text="🔄 Sync Now")
 
     def _do_login(self) -> None:
@@ -601,6 +662,24 @@ class UforaSyncApp(ctk.CTk):
                 self.after(0, self._append_log, f"Login error: {e}")
 
         threading.Thread(target=_login_thread, daemon=True).start()
+
+    def _do_logout(self) -> None:
+        confirm = messagebox.askyesno(
+            "Sign Out",
+            "Are you sure you want to sign out from UGent Ufora on this PC?",
+        )
+        if not confirm:
+            return
+
+        try:
+            subprocess.run(["ufora", "logout"], check=False)
+            profile_file = Path.home() / ".d2l" / "profile.json"
+            if profile_file.exists():
+                profile_file.unlink()
+            self._append_log("Signed out from UGent Ufora.")
+            self._refresh_courses()
+        except Exception as e:
+            self._append_log(f"Sign out error: {e}")
 
     def _append_log(self, text: str) -> None:
         self._log_text.insert("end", text + "\n")
