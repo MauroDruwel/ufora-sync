@@ -23,10 +23,12 @@ Built for **macOS**, **Linux**, and **Windows**.
 - ☁️ **OneDrive-like Sync Daemon**: Runs silently in the background and continuously synchronizes your enrolled courses.
 - 🖥️ **System Tray / Menu Bar Icon**: Live status indicators (Idle, Syncing, Up-to-date, Needs Login) with quick right-click actions.
 - 📁 **Preserved Module Structure**: Preserves exact course folder hierarchies (e.g. `Statica / Lessen / H1_Statica.pdf`) instead of flat lists.
+- 📝 **Module & Folder Descriptions**: Converts professor announcements and folder descriptions into local `README.md` files in each subfolder.
+- 🔗 **Online Activities & Quicklinks**: Generates lightweight `.html` shortcut redirect files (quizzes, Wooclap, dropboxes, external links) that open straight in your browser on double-click.
 - 🚀 **Fast Incremental Sync**: Checks remote Brightspace `LastModifiedDate` timestamps to skip unchanged files instantly without downloading them.
 - 🛡️ **Zero Stray Temp Files**: Downloads are staged safely in OS temporary storage and installed atomically. Cut-off or interrupted sync passes never leave messy `_tmp` folders in your course directories.
 - 🔒 **Process-Level Concurrency Lock**: Cross-process file locking ensures tray, GUI, and background sync never collide or duplicate operations.
-- 📝 **Non-Destructive Local Edits**:
+- 💾 **Non-Destructive Local Edits**:
   - `duplicate` *(default)*: Stashes your edited copy as `<filename>_edited.<ext>` and downloads the professor's fresh version to the original path.
   - `skip`: Keeps your local modifications and skips downloading updates for those specific files.
   - `overwrite`: Replaces local files unconditionally.
@@ -102,6 +104,8 @@ Example `config.json`:
   ],
   "conflict_strategy": "duplicate",
   "duplicate_suffix": "_edited",
+  "sync_descriptions": true,
+  "sync_links": true,
   "auto_start_tray": true
 }
 ```

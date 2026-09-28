@@ -42,6 +42,8 @@ class AppConfig:
     enabled_courses: list[str] = field(default_factory=list)  # Course IDs to sync
     conflict_strategy: str = ConflictStrategy.DUPLICATE
     duplicate_suffix: str = "_edited"
+    sync_descriptions: bool = True  # Save module descriptions as README.md
+    sync_links: bool = True  # Save online activities & links as .html shortcuts
     auto_start_tray: bool = True
     last_sync_time: str | None = None
     last_sync_status: str = "Never synced"

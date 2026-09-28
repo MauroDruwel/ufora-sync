@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import html
 import json
 import re
 import shutil
@@ -55,6 +56,12 @@ class SyncConfig:
     """Suffix inserted before the file extension for the user's copy.
     e.g. 'notes.pdf' → 'notes_edited.pdf'  (when strategy=DUPLICATE)
     """
+
+    sync_descriptions: bool = True
+    """Whether to generate README.md files for modules containing descriptions or links."""
+
+    sync_links: bool = True
+    """Whether to generate clickable .html shortcut files for online activities & links."""
 
     def edited_path(self, path: Path) -> Path:
         """Return the 'edited' sibling path for *path*, avoiding name collisions."""
@@ -522,8 +529,87 @@ class FileTopic:
     url: str | None = None
 
 
-def fetch_course_file_topics(course_id: str) -> list[FileTopic]:
-    """Extract all downloadable file topics along with their exact Ufora module path."""
+def html_to_markdown(raw_html: str) -> str:
+    """Convert HTML module and topic descriptions into clean Markdown."""
+    if not raw_html:
+        return ""
+    text = html.unescape(raw_html)
+    # Convert links: <a href="...">...</a> -> [...](...)
+    text = re.sub(
+        r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+        r"[\2](\1)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    # Bold / strong
+    text = re.sub(
+        r"<(?:strong|b)>(.*?)</(?:strong|b)>",
+        r"**\1**",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    # Italic / em
+    text = re.sub(
+        r"<(?:em|i)>(.*?)</(?:em|i)>",
+        r"*\1*",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    # List items
+    text = re.sub(
+        r"<li[^>]*>(.*?)</li>",
+        r"- \1\n",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    # Line breaks and paragraphs
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</p>", "\n\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<p[^>]*>", "", text, flags=re.IGNORECASE)
+    # Strip any remaining tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Clean excessive newlines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _resolve_topic_url(course_id: str, topic: dict[str, Any]) -> str:
+    """Resolve full URL for any Ufora topic (link, activity, or external URL)."""
+    raw_url = str(topic.get("Url") or "").strip()
+    tid = str(topic.get("TopicId") or topic.get("Id") or "")
+    if raw_url.startswith("http://") or raw_url.startswith("https://"):
+        return raw_url
+    if raw_url.startswith("/"):
+        return f"https://ufora.ugent.be{raw_url}"
+    if tid:
+        return f"https://ufora.ugent.be/d2l/le/content/{course_id}/viewContent/{tid}/View"
+    return "https://ufora.ugent.be"
+
+
+def _generate_html_shortcut(title: str, url: str) -> str:
+    """Generate a lightweight cross-platform HTML redirect shortcut."""
+    escaped_title = html.escape(title)
+    escaped_url = html.escape(url)
+    return (
+        '<!DOCTYPE html>\n<html lang="nl">\n<head>\n'
+        '  <meta charset="utf-8">\n'
+        f"  <title>{escaped_title} - Ufora</title>\n"
+        f'  <meta http-equiv="refresh" content="0; url={escaped_url}">\n'
+        "</head>\n"
+        "<body style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
+        'sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; text-align: center;">\n'
+        f"  <h2>Opening {escaped_title}…</h2>\n"
+        f'  <p><a href="{escaped_url}" style="color: #38bdf8;">'
+        "Klik hier als je niet automatisch wordt doorgestuurd.</a></p>\n"
+        f'  <script>window.location.href = "{escaped_url}";</script>\n'
+        "</body>\n</html>\n"
+    )
+
+
+def fetch_course_toc_and_file_topics(
+    course_id: str,
+) -> tuple[dict[str, Any] | None, list[FileTopic]]:
+    """Extract course TOC and downloadable file topics in a single call."""
     try:
         from ufora_cli.materials import _client_and_resolver, _walk_topics
 
@@ -532,7 +618,7 @@ def fetch_course_file_topics(course_id: str) -> list[FileTopic]:
         org_id = enrollment["OrgUnit"]["Id"]
         toc = client.content_toc(org_id)
         if not isinstance(toc, dict):
-            return []
+            return None, []
 
         file_topics: list[FileTopic] = []
         for path_tuple, topic in _walk_topics(toc):
@@ -554,11 +640,11 @@ def fetch_course_file_topics(course_id: str) -> list[FileTopic]:
                     url=url,
                 )
             )
-        return file_topics
+        return toc, file_topics
     except Exception:
         try:
             nodes = list_content(course_id)
-            return [
+            return None, [
                 FileTopic(
                     id=n.id,
                     title=n.title,
@@ -567,7 +653,137 @@ def fetch_course_file_topics(course_id: str) -> list[FileTopic]:
                 for n in collect_file_topics(nodes)
             ]
         except Exception:
-            return []
+            return None, []
+
+
+def fetch_course_file_topics(course_id: str) -> list[FileTopic]:
+    """Extract all downloadable file topics along with their exact Ufora module path."""
+    _, topics = fetch_course_toc_and_file_topics(course_id)
+    return topics
+
+
+def sync_course_descriptions_and_links(
+    course_id: str,
+    course_dir: Path,
+    toc: dict[str, Any],
+    manifest: SyncManifest,
+    cfg: SyncConfig,
+    result: SyncResult,
+    on_progress: Any = None,
+) -> bool:
+    """Generate README.md and .html shortcuts for modules and online activities."""
+    manifest_dirty = False
+
+    def _walk_module(module: dict[str, Any], path_tuple: tuple[str, ...]) -> None:
+        nonlocal manifest_dirty
+
+        title = str(module.get("Title") or "Untitled")
+        mod_id = str(module.get("ModuleId") or module.get("Id") or "")
+        clean_title = _sanitize_folder_name(title)
+        current_path = path_tuple + (clean_title,)
+
+        module_dir = course_dir
+        for part in current_path:
+            module_dir = module_dir / part
+
+        desc_raw = (
+            (module.get("Description") or {}).get("Html")
+            or (module.get("Description") or {}).get("Text")
+            or ""
+        )
+        desc_md = html_to_markdown(desc_raw)
+
+        topics = module.get("Topics") or []
+        non_files = [
+            t for t in topics if t.get("TypeIdentifier") != "File" and t.get("TopicType") != 1
+        ]
+
+        # 1. Generate README.md if module has a description or non-file activities
+        if cfg.sync_descriptions and (desc_md or non_files):
+            module_dir.mkdir(parents=True, exist_ok=True)
+            readme_path = module_dir / "README.md"
+            rel_readme = readme_path.relative_to(course_dir)
+
+            md_lines = [f"# {title}"]
+            if desc_md:
+                md_lines.extend(["", desc_md])
+
+            if non_files:
+                md_lines.extend(["", "---", "", "## 🔗 Online Activiteiten & Links", ""])
+                for t in non_files:
+                    ttitle = str(t.get("Title") or "Link")
+                    turl = _resolve_topic_url(course_id, t)
+                    ttype = str(t.get("TypeIdentifier") or "Link")
+                    tdesc_raw = (
+                        (t.get("Description") or {}).get("Html")
+                        or (t.get("Description") or {}).get("Text")
+                        or ""
+                    )
+                    tdesc_md = html_to_markdown(tdesc_raw)
+                    md_lines.append(f"- **[{ttitle}]({turl})** *({ttype})*")
+                    if tdesc_md:
+                        quoted = "> " + tdesc_md.replace("\n", "\n> ")
+                        md_lines.append(quoted)
+                    md_lines.append("")
+
+            readme_content = "\n".join(md_lines).strip() + "\n"
+            content_bytes = readme_content.encode("utf-8")
+            content_sha = hashlib.sha256(content_bytes).hexdigest()
+
+            needs_write = True
+            existing = manifest.get_by_remote_id(f"mod_desc_{mod_id}")
+            if readme_path.exists() and existing and existing.sha256 == content_sha:
+                needs_write = False
+                result.skipped_exists.append(str(rel_readme))
+
+            if needs_write:
+                tmp_readme = readme_path.with_name(f".README.md.tmp_{time.time_ns()}")
+                tmp_readme.write_bytes(content_bytes)
+                tmp_readme.replace(readme_path)
+                manifest.record(f"mod_desc_{mod_id}", str(rel_readme), readme_path)
+                manifest_dirty = True
+                result.downloaded.append(str(rel_readme))
+                if on_progress:
+                    on_progress(f"  ✓ {rel_readme}")
+
+        # 2. Generate .html shortcut files for online activities
+        if cfg.sync_links and non_files:
+            module_dir.mkdir(parents=True, exist_ok=True)
+            for t in non_files:
+                ttitle = str(t.get("Title") or "Link")
+                tid = str(t.get("TopicId") or t.get("Id") or "")
+                turl = _resolve_topic_url(course_id, t)
+                shortcut_name = f"{_sanitize_folder_name(ttitle)}.html"
+                shortcut_path = module_dir / shortcut_name
+                rel_shortcut = shortcut_path.relative_to(course_dir)
+
+                shortcut_html = _generate_html_shortcut(ttitle, turl)
+                shortcut_bytes = shortcut_html.encode("utf-8")
+                shortcut_sha = hashlib.sha256(shortcut_bytes).hexdigest()
+
+                needs_write = True
+                existing = manifest.get_by_remote_id(f"link_{tid}")
+                if shortcut_path.exists() and existing and existing.sha256 == shortcut_sha:
+                    needs_write = False
+                    result.skipped_exists.append(str(rel_shortcut))
+
+                if needs_write:
+                    tmp_shortcut = shortcut_path.with_name(f".{shortcut_name}.tmp_{time.time_ns()}")
+                    tmp_shortcut.write_bytes(shortcut_bytes)
+                    tmp_shortcut.replace(shortcut_path)
+                    manifest.record(f"link_{tid}", str(rel_shortcut), shortcut_path)
+                    manifest_dirty = True
+                    result.downloaded.append(str(rel_shortcut))
+                    if on_progress:
+                        on_progress(f"  ✓ {rel_shortcut}")
+
+        for sub in module.get("Modules") or []:
+            _walk_module(sub, current_path)
+
+    for m in toc.get("Modules") or []:
+        _walk_module(m, ())
+
+    return manifest_dirty
 
 
 def sync_course_all(
@@ -581,8 +797,8 @@ def sync_course_all(
     if on_progress:
         on_progress(f"Inspecting course tree: {course.name}…")
 
-    file_topics = fetch_course_file_topics(course.id)
-    if not file_topics:
+    toc, file_topics = fetch_course_toc_and_file_topics(course.id)
+    if not file_topics and not toc:
         if on_progress:
             on_progress(f"No downloadable files found in {course.name}")
         return SyncResult()
@@ -695,6 +911,19 @@ def sync_course_all(
                 if on_progress and not locally_edited:
                     on_progress(f"  ✓ {relative}")
 
+    if toc and (cfg.sync_descriptions or cfg.sync_links):
+        desc_dirty = sync_course_descriptions_and_links(
+            course.id,
+            course_dir,
+            toc,
+            manifest,
+            cfg,
+            result,
+            on_progress=on_progress,
+        )
+        if desc_dirty:
+            manifest_dirty = True
+
     if manifest_dirty:
         manifest.save()
 
@@ -702,8 +931,8 @@ def sync_course_all(
         downloaded = len(result.downloaded)
         skipped = len(result.skipped_exists) + len(result.skipped_edited)
         if downloaded == 0 and skipped > 0:
-            on_progress(f"  ✓ All {skipped} file(s) are up to date.")
+            on_progress(f"  ✓ All {skipped} item(s) are up to date.")
         elif downloaded > 0:
-            on_progress(f"  Summary: {downloaded} downloaded, {skipped} up to date.")
+            on_progress(f"  Summary: {downloaded} downloaded/updated, {skipped} up to date.")
 
     return result

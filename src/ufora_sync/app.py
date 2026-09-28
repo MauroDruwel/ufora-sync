@@ -171,6 +171,8 @@ class UforaSyncApp(ctk.CTk):
             )
         )
         self._suffix_var = ctk.StringVar(value=self.config.duplicate_suffix)
+        self._sync_desc_var = ctk.BooleanVar(value=self.config.sync_descriptions)
+        self._sync_links_var = ctk.BooleanVar(value=self.config.sync_links)
 
         self._build_ui()
         self._bind_service_events()
@@ -425,6 +427,31 @@ class UforaSyncApp(ctk.CTk):
             text_color=FG_TEXT,
         ).pack(side="left")
 
+        # 3. Notes & Online Activities
+        ctk.CTkLabel(
+            form, text="Folder Notes & Online Activities", font=FONT_HEADING, text_color=FG_TEXT
+        ).pack(anchor="w", pady=(0, 4))
+
+        ctk.CTkCheckBox(
+            form,
+            text="Save module and folder descriptions as README.md in course directories",
+            variable=self._sync_desc_var,
+            font=FONT_BODY,
+            text_color=FG_TEXT,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+        ).pack(anchor="w", pady=(0, 8))
+
+        ctk.CTkCheckBox(
+            form,
+            text="Save online activities (quizzes, dropboxes, links) as .html shortcuts",
+            variable=self._sync_links_var,
+            font=FONT_BODY,
+            text_color=FG_TEXT,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+        ).pack(anchor="w", pady=(0, 20))
+
         # Save Settings Action
         ctk.CTkButton(
             form,
@@ -633,6 +660,8 @@ class UforaSyncApp(ctk.CTk):
                 break
 
         self.config.duplicate_suffix = self._suffix_var.get().strip() or "_edited"
+        self.config.sync_descriptions = self._sync_desc_var.get()
+        self.config.sync_links = self._sync_links_var.get()
         self.config.save()
         self._append_log("Configuration saved successfully.")
         messagebox.showinfo("Ufora Sync", "Settings saved!")

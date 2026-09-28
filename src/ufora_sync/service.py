@@ -173,6 +173,8 @@ class SyncService:
             cfg = SyncConfig(
                 conflict_strategy=self.config.conflict_strategy,
                 duplicate_suffix=self.config.duplicate_suffix,
+                sync_descriptions=self.config.sync_descriptions,
+                sync_links=self.config.sync_links,
             )
 
             for course in matched:
