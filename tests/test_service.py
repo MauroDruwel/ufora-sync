@@ -59,3 +59,27 @@ def test_service_start_stop():
     service.stop()
     assert service.last_status == "Stopped"
 
+
+def test_service_lock_prevents_concurrent_sync(monkeypatch, tmp_path: Path):
+    from ufora_sync.lock import ProcessLock
+
+    fake_config_dir = tmp_path / "cfg"
+    fake_config_dir.mkdir()
+    monkeypatch.setattr("ufora_sync.service.get_default_config_dir", lambda: fake_config_dir)
+
+    lock_file = fake_config_dir / "sync.lock"
+    external_lock = ProcessLock(lock_file)
+    assert external_lock.acquire() is True
+
+    service = SyncService()
+    logs = []
+    service.add_log_listener(lambda line: logs.append(line))
+
+    service._do_sync_pass()
+
+    assert any("Another sync pass is currently running" in log for log in logs)
+    assert not service.is_syncing
+
+    external_lock.release()
+
+

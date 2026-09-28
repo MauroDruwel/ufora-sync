@@ -1,7 +1,10 @@
 # Ufora Sync
 
+![Ufora Sync Banner](assets/banner.png)
+
 [![Mauro Quality Gate](https://img.shields.io/badge/Mauro%20Quality%20Gate-Passed-2ea44f?style=flat&logo=github)](https://github.com/MauroDruwel/quality-gate)
 [![CI](https://github.com/MauroDruwel/ufora-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/MauroDruwel/ufora-sync/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/MauroDruwel/ufora-sync?color=blue)](https://github.com/MauroDruwel/ufora-sync/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Author: Mauro Druwel](https://img.shields.io/badge/Author-Mauro%20Druwel-orange)](https://maurodruwel.be)
 
@@ -16,13 +19,17 @@ Built for **macOS**, **Linux**, and **Windows**.
 
 - ☁️ **OneDrive-like Sync Daemon**: Runs silently in the background and continuously synchronizes your enrolled courses.
 - 🖥️ **System Tray / Menu Bar Icon**: Live status indicators (Idle, Syncing, Up-to-date, Needs Login) with quick right-click actions.
-- 🛡️ **Non-Destructive Local Edits**:
+- 📁 **Preserved Module Structure**: Preserves exact course folder hierarchies (e.g. `Statica / Lessen / H1_Statica.pdf`) instead of flat lists.
+- 🚀 **Fast Incremental Sync**: Checks remote Brightspace `LastModifiedDate` timestamps to skip unchanged files instantly without downloading them.
+- 🛡️ **Zero Stray Temp Files**: Downloads are staged safely in OS temporary storage and installed atomically. Cut-off or interrupted sync passes never leave messy `_tmp` folders in your course directories.
+- 🔒 **Process-Level Concurrency Lock**: Cross-process file locking ensures tray, GUI, and background sync never collide or duplicate operations.
+- 📝 **Non-Destructive Local Edits**:
   - `duplicate` *(default)*: Stashes your edited copy as `<filename>_edited.<ext>` and downloads the professor's fresh version to the original path.
   - `skip`: Keeps your local modifications and skips downloading updates for those specific files.
   - `overwrite`: Replaces local files unconditionally.
-- 🎓 **Course Selection Hub**: Clean dark GUI to toggle which courses to sync and open local course folders with one click.
-- 🔒 **Local & Private**: No third-party servers. Your session stays on your machine (`~/.d2l`).
-- 🏛️ **Mauro Quality Gate (MQG) Verified**: Full compliance with MQG standards (Pillars 1–6).
+- 🎓 **Course Selection Hub**: Clean dark CustomTkinter GUI to toggle courses, configure intervals, and open local course folders with one click.
+- 🔑 **Local & Private**: No third-party servers. Your session stays on your machine (`~/.d2l`).
+- 🏛️ **Mauro Quality Gate (MQG) Verified**: 100% compliance with MQG standards (Pillars 1–6).
 
 ---
 
@@ -102,7 +109,7 @@ Example `config.json`:
 
 ```bash
 python3 -m pytest tests/ -v
-python3 -m ruff check
+python3 -m ruff check .
 ```
 
 ---

@@ -9,7 +9,8 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from ufora_sync.config import AppConfig
+from ufora_sync.config import AppConfig, get_default_config_dir
+from ufora_sync.lock import ProcessLock
 from ufora_sync.sync import (
     SyncConfig,
     SyncResult,
@@ -131,6 +132,13 @@ class SyncService:
                 return
             self.is_syncing = True
 
+        lock = ProcessLock(get_default_config_dir() / "sync.lock")
+        if not lock.acquire(blocking=False):
+            self._notify_log("Another sync pass is currently running. Skipping.")
+            with self._lock:
+                self.is_syncing = False
+            return
+
         self.config = AppConfig.load()
         sync_dir = Path(self.config.sync_dir).expanduser()
         sync_dir.mkdir(parents=True, exist_ok=True)
@@ -139,14 +147,18 @@ class SyncService:
         if not is_auth:
             self._notify_status(f"Auth needed: {auth_msg}")
             self._notify_log(f"⚠ {auth_msg}. Run 'ufora login' or use Login button in Settings.")
-            self.is_syncing = False
+            lock.release()
+            with self._lock:
+                self.is_syncing = False
             return
 
         enabled_ids = set(self.config.enabled_courses)
         if not enabled_ids:
             self._notify_status("No courses selected")
             self._notify_log("No courses enabled for sync. Select courses in the Settings window.")
-            self.is_syncing = False
+            lock.release()
+            with self._lock:
+                self.is_syncing = False
             return
 
         self._notify_status("Syncing…")
@@ -210,4 +222,6 @@ class SyncService:
             self._notify_status("Sync failed")
             self._notify_log(f"✗ Sync error: {exc}")
         finally:
-            self.is_syncing = False
+            lock.release()
+            with self._lock:
+                self.is_syncing = False

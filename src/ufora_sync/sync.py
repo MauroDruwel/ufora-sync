@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -73,19 +75,30 @@ class SyncedFile:
     local_path: str  # absolute path on disk
     sha256: str
     synced_at: str  # ISO-8601
+    remote_modified: str | None = None  # LastModifiedDate from Brightspace TOC
 
-    def to_dict(self) -> dict[str, str]:
-        return {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "remote_id": self.remote_id,
             "remote_path": self.remote_path,
             "local_path": self.local_path,
             "sha256": self.sha256,
             "synced_at": self.synced_at,
         }
+        if self.remote_modified is not None:
+            d["remote_modified"] = self.remote_modified
+        return d
 
     @classmethod
-    def from_dict(cls, d: dict[str, str]) -> SyncedFile:
-        return cls(**d)
+    def from_dict(cls, d: dict[str, Any]) -> SyncedFile:
+        return cls(
+            remote_id=str(d.get("remote_id", "")),
+            remote_path=str(d.get("remote_path", "")),
+            local_path=str(d.get("local_path", "")),
+            sha256=str(d.get("sha256", "")),
+            synced_at=str(d.get("synced_at", "")),
+            remote_modified=d.get("remote_modified"),
+        )
 
 
 @dataclass
@@ -110,9 +123,25 @@ class SyncManifest:
             self.files = {}
 
     def save(self) -> None:
+        """Atomically persist manifest to prevent file corruption on interrupts."""
         self.base_dir.mkdir(parents=True, exist_ok=True)
         payload = {"files": {k: v.to_dict() for k, v in self.files.items()}}
-        self._path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp_path = self._path.with_name(f".{self._path.name}.tmp_{time.time_ns()}")
+        try:
+            tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            tmp_path.replace(self._path)
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+            raise
+
+    def get_by_remote_id(self, remote_id: str) -> SyncedFile | None:
+        """Find an existing entry by its Brightspace topic ID."""
+        rid = str(remote_id)
+        for entry in self.files.values():
+            if entry.remote_id == rid:
+                return entry
+        return None
 
     def is_locally_edited(self, local_path: Path) -> bool:
         """Return True if the file exists and has been changed since last sync."""
@@ -124,7 +153,13 @@ class SyncManifest:
         current_sha = _sha256(local_path)
         return current_sha != self.files[key].sha256
 
-    def record(self, remote_id: str, remote_path: str, local_path: Path) -> None:
+    def record(
+        self,
+        remote_id: str,
+        remote_path: str,
+        local_path: Path,
+        remote_modified: str | None = None,
+    ) -> None:
         key = str(local_path)
         self.files[key] = SyncedFile(
             remote_id=remote_id,
@@ -132,6 +167,7 @@ class SyncManifest:
             local_path=key,
             sha256=_sha256(local_path),
             synced_at=datetime.now(UTC).isoformat(),
+            remote_modified=remote_modified,
         )
 
 
@@ -152,6 +188,26 @@ def _sanitize_folder_name(name: str) -> str:
     """Sanitize course title for filesystem usage."""
     cleaned = re.sub(r'[\\/*?:"<>|]', "-", name).strip()
     return cleaned or "Unnamed Course"
+
+
+def _clean_legacy_temp_dirs(directory: Path) -> None:
+    """Remove any leftover staging or legacy temporary folders from previous interrupted syncs."""
+    if not directory.exists():
+        return
+    for item in directory.glob("_tmp*"):
+        if item.is_dir():
+            shutil.rmtree(item, ignore_errors=True)
+    for hidden_stray in directory.rglob(".*.tmp_*"):
+        with contextlib.suppress(OSError):
+            hidden_stray.unlink(missing_ok=True)
+
+
+def _atomic_install_file(src: Path, dest: Path) -> None:
+    """Atomically place a file into dest using a hidden temp file in dest's parent folder."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dest = dest.with_name(f".{dest.name}.tmp_{time.time_ns()}")
+    shutil.copy2(src, tmp_dest)
+    tmp_dest.replace(dest)
 
 
 def get_token_file() -> Path:
@@ -210,7 +266,6 @@ def get_student_name() -> str:
         except Exception:
             pass
 
-
     try:
         data = json.loads(token_file.read_text(encoding="utf-8"))
         return str(data.get("user_id") or data.get("sub") or "")
@@ -218,12 +273,10 @@ def get_student_name() -> str:
         return ""
 
 
-
 def _ufora_exe() -> str:
     """Locate the installed `ufora` CLI executable."""
     exe = shutil.which("ufora")
     if not exe:
-        # Fallback to python bin directory
         fallback = Path(sys.executable).parent / "ufora"
         if fallback.exists():
             return str(fallback)
@@ -253,7 +306,7 @@ def _run_ufora_json(*args: str) -> Any:
 
 
 def _run_ufora_download(course_id: str, topic_id: str, out_dir: Path) -> None:
-    """Call `ufora download-content` for a single topic or module."""
+    """Call `ufora download-content` for a single topic or module into a staging directory."""
     cmd = [
         _ufora_exe(),
         "download-content",
@@ -357,7 +410,7 @@ def collect_file_topics(nodes: list[ContentNode]) -> list[ContentNode]:
     """Flatten and extract all file-backed topics with IDs from content tree."""
     files: list[ContentNode] = []
 
-    def _walk(item_list: list[ContentNode]):
+    def _walk(item_list: list[ContentNode]) -> None:
         for node in item_list:
             if node.kind == "file" and node.id:
                 files.append(node)
@@ -394,12 +447,15 @@ def sync_topics(
     config: SyncConfig | None = None,
     on_progress: Any = None,  # callable(message: str)
 ) -> SyncResult:
-    """Download selected topics from a course into base_dir."""
+    """Download selected topics from a course into base_dir robustly using OS temp staging."""
     cfg = config or SyncConfig()
     result = SyncResult()
     target_subfolder = course_subfolder or course_id
     course_dir = base_dir / target_subfolder
     course_dir.mkdir(parents=True, exist_ok=True)
+
+    # Clean legacy temporary folders from past interrupted runs
+    _clean_legacy_temp_dirs(course_dir)
 
     manifest = SyncManifest(base_dir=course_dir)
     manifest.load()
@@ -408,56 +464,50 @@ def sync_topics(
         if on_progress:
             on_progress(f"Downloading item {topic_id}…")
 
-        tmp_dir = course_dir / f"_tmp_{topic_id}"
-        try:
-            _run_ufora_download(course_id, topic_id, tmp_dir)
-        except RuntimeError as exc:
-            result.errors.append((topic_id, str(exc)))
-            if on_progress:
-                on_progress(f"  ✗ Error: {exc}")
-            continue
-
-        for src in sorted(tmp_dir.rglob("*")):
-            if not src.is_file():
+        with tempfile.TemporaryDirectory(prefix=f"ufora_stage_{topic_id}_") as stage_dir_str:
+            stage_dir = Path(stage_dir_str)
+            try:
+                _run_ufora_download(course_id, topic_id, stage_dir)
+            except RuntimeError as exc:
+                result.errors.append((topic_id, str(exc)))
+                if on_progress:
+                    on_progress(f"  ✗ Error: {exc}")
                 continue
-            relative = src.relative_to(tmp_dir)
-            dest = course_dir / relative
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            remote_path = str(relative)
 
-            locally_edited = dest.exists() and manifest.is_locally_edited(dest)
-
-            if locally_edited:
-                strategy = cfg.conflict_strategy
-
-                if strategy == ConflictStrategy.SKIP:
-                    result.skipped_edited.append(str(relative))
-                    if on_progress:
-                        on_progress(f"  ↷ Kept local edit: {relative}")
-                    src.unlink()
+            for src in sorted(stage_dir.rglob("*")):
+                if not src.is_file():
                     continue
+                relative = src.relative_to(stage_dir)
+                dest = course_dir / relative
+                remote_path = str(relative)
 
-                elif strategy == ConflictStrategy.DUPLICATE:
-                    edited_dest = cfg.edited_path(dest)
-                    shutil.move(str(dest), str(edited_dest))
-                    result.skipped_edited.append(str(relative))
-                    if on_progress:
-                        on_progress(f"  ✎ Stashed edit → {edited_dest.name} | updated {relative}")
+                locally_edited = dest.exists() and manifest.is_locally_edited(dest)
 
-                elif strategy == ConflictStrategy.OVERWRITE:
-                    result.skipped_edited.append(str(relative))
-                    if on_progress:
-                        on_progress(f"  ⚠ Overwrote local edit: {relative}")
+                if locally_edited:
+                    strategy = cfg.conflict_strategy
+                    if strategy == ConflictStrategy.SKIP:
+                        result.skipped_edited.append(str(relative))
+                        if on_progress:
+                            on_progress(f"  ↷ Kept local edit: {relative}")
+                        continue
+                    elif strategy == ConflictStrategy.DUPLICATE:
+                        edited_dest = cfg.edited_path(dest)
+                        shutil.move(str(dest), str(edited_dest))
+                        result.skipped_edited.append(str(relative))
+                        if on_progress:
+                            on_progress(
+                                f"  ✎ Stashed edit → {edited_dest.name} | updated {relative}"
+                            )
+                    elif strategy == ConflictStrategy.OVERWRITE:
+                        result.skipped_edited.append(str(relative))
+                        if on_progress:
+                            on_progress(f"  ⚠ Overwrote local edit: {relative}")
 
-            shutil.copy2(src, dest)
-            manifest.record(topic_id, remote_path, dest)
-            result.downloaded.append(str(relative))
-            if on_progress and not locally_edited:
-                on_progress(f"  ✓ {relative}")
-            src.unlink()
-
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
+                _atomic_install_file(src, dest)
+                manifest.record(topic_id, remote_path, dest)
+                result.downloaded.append(str(relative))
+                if on_progress and not locally_edited:
+                    on_progress(f"  ✓ {relative}")
 
     manifest.save()
     return result
@@ -468,6 +518,8 @@ class FileTopic:
     id: str
     title: str
     module_path: tuple[str, ...] = ()
+    remote_modified: str | None = None
+    url: str | None = None
 
 
 def fetch_course_file_topics(course_id: str) -> list[FileTopic]:
@@ -491,7 +543,17 @@ def fetch_course_file_topics(course_id: str) -> list[FileTopic]:
             if not tid:
                 continue
             title = str(topic.get("Title") or f"topic-{tid}")
-            file_topics.append(FileTopic(id=tid, title=title, module_path=path_tuple))
+            modified = str(topic.get("LastModifiedDate") or "").strip() or None
+            url = str(topic.get("Url") or "").strip() or None
+            file_topics.append(
+                FileTopic(
+                    id=tid,
+                    title=title,
+                    module_path=path_tuple,
+                    remote_modified=modified,
+                    url=url,
+                )
+            )
         return file_topics
     except Exception:
         try:
@@ -515,7 +577,7 @@ def sync_course_all(
     config: SyncConfig | None = None,
     on_progress: Any = None,
 ) -> SyncResult:
-    """Download all file-backed materials for a complete course, preserving folder structure."""
+    """Download all file-backed materials for a course, preserving folder structure robustly."""
     if on_progress:
         on_progress(f"Inspecting course tree: {course.name}…")
 
@@ -530,71 +592,110 @@ def sync_course_all(
     course_dir = base_dir / course.folder_name
     course_dir.mkdir(parents=True, exist_ok=True)
 
+    # Sweep and clean legacy temporary staging folders
+    _clean_legacy_temp_dirs(course_dir)
+
     manifest = SyncManifest(base_dir=course_dir)
     manifest.load()
 
+    manifest_dirty = False
+
     for item in file_topics:
         topic_id = item.id
-        # Build target directory preserving Ufora module structure
+
+        # Target subfolder inside course
         target_folder = course_dir
         for subfolder in item.module_path:
             clean_subfolder = _sanitize_folder_name(subfolder)
             target_folder = target_folder / clean_subfolder
         target_folder.mkdir(parents=True, exist_ok=True)
 
+        # Smart incremental check: avoid downloading unchanged files
+        existing_entry = manifest.get_by_remote_id(topic_id)
+        if existing_entry:
+            dest_path = Path(existing_entry.local_path)
+            if dest_path.exists():
+                is_edited = manifest.is_locally_edited(dest_path)
+
+                # If remote_modified matches, nothing changed on Ufora
+                if item.remote_modified and existing_entry.remote_modified == item.remote_modified:
+                    rel_str = str(dest_path.relative_to(course_dir))
+                    if is_edited:
+                        result.skipped_edited.append(rel_str)
+                    else:
+                        result.skipped_exists.append(rel_str)
+                    continue
+
+                # Backfill remote_modified for files downloaded in previous versions
+                if (
+                    not is_edited
+                    and existing_entry.remote_modified is None
+                    and item.remote_modified
+                ):
+                    existing_entry.remote_modified = item.remote_modified
+                    manifest_dirty = True
+                    result.skipped_exists.append(str(dest_path.relative_to(course_dir)))
+                    continue
+
         if on_progress:
             folder_display = " / ".join(item.module_path)
             where_str = f" [{folder_display}]" if folder_display else ""
             on_progress(f"Downloading item {topic_id}{where_str}…")
 
-        tmp_dir = course_dir / f"_tmp_{topic_id}"
-        try:
-            _run_ufora_download(course.id, topic_id, tmp_dir)
-        except RuntimeError as exc:
-            result.errors.append((topic_id, str(exc)))
-            if on_progress:
-                on_progress(f"  ✗ Error: {exc}")
-            continue
-
-        for src in sorted(tmp_dir.rglob("*")):
-            if not src.is_file():
+        with tempfile.TemporaryDirectory(prefix=f"ufora_stage_{topic_id}_") as stage_dir_str:
+            stage_dir = Path(stage_dir_str)
+            try:
+                _run_ufora_download(course.id, topic_id, stage_dir)
+            except RuntimeError as exc:
+                result.errors.append((topic_id, str(exc)))
+                if on_progress:
+                    on_progress(f"  ✗ Error: {exc}")
                 continue
 
-            filename = src.name
-            dest = target_folder / filename
-            relative = dest.relative_to(course_dir)
-            remote_path = str(relative)
-
-            locally_edited = dest.exists() and manifest.is_locally_edited(dest)
-
-            if locally_edited:
-                strategy = cfg.conflict_strategy
-                if strategy == ConflictStrategy.SKIP:
-                    result.skipped_edited.append(str(relative))
-                    if on_progress:
-                        on_progress(f"  ↷ Kept local edit: {relative}")
-                    src.unlink()
+            for src in sorted(stage_dir.rglob("*")):
+                if not src.is_file():
                     continue
-                elif strategy == ConflictStrategy.DUPLICATE:
-                    edited_dest = cfg.edited_path(dest)
-                    shutil.move(str(dest), str(edited_dest))
-                    result.skipped_edited.append(str(relative))
-                    if on_progress:
-                        on_progress(f"  ✎ Stashed edit → {edited_dest.name} | updated {relative}")
-                elif strategy == ConflictStrategy.OVERWRITE:
-                    result.skipped_edited.append(str(relative))
-                    if on_progress:
-                        on_progress(f"  ⚠ Overwrote local edit: {relative}")
 
-            shutil.copy2(src, dest)
-            manifest.record(topic_id, remote_path, dest)
-            result.downloaded.append(str(relative))
-            if on_progress and not locally_edited:
-                on_progress(f"  ✓ {relative}")
-            src.unlink()
+                filename = src.name
+                dest = target_folder / filename
+                relative = dest.relative_to(course_dir)
+                remote_path = str(relative)
 
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+                locally_edited = dest.exists() and manifest.is_locally_edited(dest)
 
-    manifest.save()
+                if locally_edited:
+                    strategy = cfg.conflict_strategy
+                    if strategy == ConflictStrategy.SKIP:
+                        result.skipped_edited.append(str(relative))
+                        if on_progress:
+                            on_progress(f"  ↷ Kept local edit: {relative}")
+                        continue
+                    elif strategy == ConflictStrategy.DUPLICATE:
+                        edited_dest = cfg.edited_path(dest)
+                        shutil.move(str(dest), str(edited_dest))
+                        result.skipped_edited.append(str(relative))
+                        if on_progress:
+                            on_progress(
+                                f"  ✎ Stashed edit → {edited_dest.name} | updated {relative}"
+                            )
+                    elif strategy == ConflictStrategy.OVERWRITE:
+                        result.skipped_edited.append(str(relative))
+                        if on_progress:
+                            on_progress(f"  ⚠ Overwrote local edit: {relative}")
+
+                _atomic_install_file(src, dest)
+                manifest.record(
+                    topic_id,
+                    remote_path,
+                    dest,
+                    remote_modified=item.remote_modified,
+                )
+                manifest_dirty = True
+                result.downloaded.append(str(relative))
+                if on_progress and not locally_edited:
+                    on_progress(f"  ✓ {relative}")
+
+    if manifest_dirty:
+        manifest.save()
+
     return result
-

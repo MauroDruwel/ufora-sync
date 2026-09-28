@@ -165,3 +165,55 @@ def test_labels_cover_all_strategies() -> None:
         assert strategy in ConflictStrategy.LABELS
         assert ConflictStrategy.LABELS[strategy]  # non-empty label
 
+
+# ---------------------------------------------------------------------------
+# Robustness & Cleanup tests
+# ---------------------------------------------------------------------------
+
+
+def test_clean_legacy_temp_dirs(tmp_path: Path) -> None:
+    from ufora_sync.sync import _clean_legacy_temp_dirs
+
+    course_dir = tmp_path / "Math"
+    course_dir.mkdir()
+
+    # Create normal file
+    normal_file = course_dir / "notes.pdf"
+    normal_file.write_text("notes")
+
+    # Create legacy _tmp directory
+    legacy_tmp = course_dir / "_tmp_12345"
+    legacy_tmp.mkdir()
+    (legacy_tmp / "half_download.mp4").write_text("partial")
+
+    # Create stray hidden temp file
+    hidden_tmp = course_dir / ".notes.pdf.tmp_9999"
+    hidden_tmp.write_text("stray")
+
+    assert legacy_tmp.exists()
+    assert hidden_tmp.exists()
+
+    _clean_legacy_temp_dirs(course_dir)
+
+    assert normal_file.exists()
+    assert not legacy_tmp.exists()
+    assert not hidden_tmp.exists()
+
+
+def test_manifest_preserves_remote_modified(tmp_path: Path) -> None:
+    manifest = SyncManifest(base_dir=tmp_path)
+    f = tmp_path / "lesson.pdf"
+    _write(f, b"content")
+
+    manifest.record("topic-100", "lesson.pdf", f, remote_modified="2026-09-28T12:00:00Z")
+    manifest.save()
+
+    manifest2 = SyncManifest(base_dir=tmp_path)
+    manifest2.load()
+
+    entry = manifest2.get_by_remote_id("topic-100")
+    assert entry is not None
+    assert entry.remote_modified == "2026-09-28T12:00:00Z"
+    assert entry.local_path == str(f)
+
+
