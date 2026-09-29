@@ -21,6 +21,7 @@ Built for **macOS**, **Linux**, and **Windows**.
 ## ⚡ Highlights
 
 - ☁️ **OneDrive-like Sync Daemon**: Runs silently in the background and continuously synchronizes your enrolled courses.
+- 🔄 **Automatic Silent Token Renewal**: Headlessly renews expiring Brightspace tokens in the background via saved SSO cookies — no more hourly login interruptions.
 - 🖥️ **System Tray / Menu Bar Icon**: Live status indicators (Idle, Syncing, Up-to-date, Needs Login) with quick right-click actions.
 - 📁 **Preserved Module Structure**: Preserves exact course folder hierarchies (e.g. `Statica / Lessen / H1_Statica.pdf`) instead of flat lists.
 - 📝 **Module & Folder Descriptions**: Converts professor announcements and folder descriptions into local `README.md` files in each subfolder.

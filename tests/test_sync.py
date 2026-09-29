@@ -215,3 +215,86 @@ def test_manifest_preserves_remote_modified(tmp_path: Path) -> None:
     assert entry is not None
     assert entry.remote_modified == "2026-09-28T12:00:00Z"
     assert entry.local_path == str(f)
+
+
+# ---------------------------------------------------------------------------
+# Auth status & Auto-renewal tests
+# ---------------------------------------------------------------------------
+
+
+def test_check_auth_status_not_logged_in(monkeypatch, tmp_path: Path) -> None:
+    from ufora_sync.sync import check_auth_status
+
+    monkeypatch.setattr("ufora_sync.sync.get_token_file", lambda: tmp_path / "token.json")
+    is_auth, msg = check_auth_status()
+    assert is_auth is False
+    assert msg == "Not logged in"
+
+
+def test_check_auth_status_valid(monkeypatch, tmp_path: Path) -> None:
+    import json
+    import time
+
+    from ufora_sync.sync import check_auth_status
+
+    token_file = tmp_path / "token.json"
+    token_file.write_text(json.dumps({"exp": time.time() + 3600, "user_id": "228577"}))
+    monkeypatch.setattr("ufora_sync.sync.get_token_file", lambda: token_file)
+
+    is_auth, msg = check_auth_status()
+    assert is_auth is True
+    assert "228577" in msg
+
+
+def test_check_auth_status_expired(monkeypatch, tmp_path: Path) -> None:
+    import json
+    import time
+
+    from ufora_sync.sync import check_auth_status
+
+    token_file = tmp_path / "token.json"
+    token_file.write_text(json.dumps({"exp": time.time() - 100, "user_id": "228577"}))
+    monkeypatch.setattr("ufora_sync.sync.get_token_file", lambda: token_file)
+
+    is_auth, msg = check_auth_status()
+    assert is_auth is False
+    assert msg == "Session expired"
+
+
+def test_ensure_authenticated_auto_renews(monkeypatch, tmp_path: Path) -> None:
+    import json
+    import time
+
+    from ufora_sync.sync import ensure_authenticated
+
+    token_file = tmp_path / "token.json"
+    now = time.time()
+    token_file.write_text(json.dumps({"exp": now - 10, "user_id": "228577"}))
+    monkeypatch.setattr("ufora_sync.sync.get_token_file", lambda: token_file)
+
+    def fake_refresh():
+        token_file.write_text(json.dumps({"exp": time.time() + 3600, "user_id": "228577"}))
+        return True
+
+    monkeypatch.setattr("ufora_sync.sync.refresh_session", fake_refresh)
+
+    is_auth, msg = ensure_authenticated()
+    assert is_auth is True
+    assert "228577" in msg
+
+
+def test_ensure_authenticated_fails_when_renew_fails(monkeypatch, tmp_path: Path) -> None:
+    import json
+    import time
+
+    from ufora_sync.sync import ensure_authenticated
+
+    token_file = tmp_path / "token.json"
+    now = time.time()
+    token_file.write_text(json.dumps({"exp": now - 10, "user_id": "228577"}))
+    monkeypatch.setattr("ufora_sync.sync.get_token_file", lambda: token_file)
+    monkeypatch.setattr("ufora_sync.sync.refresh_session", lambda: False)
+
+    is_auth, msg = ensure_authenticated()
+    assert is_auth is False
+    assert msg == "Session expired"

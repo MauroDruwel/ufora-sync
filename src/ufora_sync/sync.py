@@ -221,6 +221,34 @@ def get_token_file() -> Path:
     return Path.home() / ".d2l" / "token.json"
 
 
+def refresh_session() -> bool:
+    """Silently renew the Ufora token in the background using saved SSO cookies.
+
+    Returns True if a fresh token was successfully captured, False otherwise.
+    """
+    # 1. Try invoking ufora refresh via CLI
+    try:
+        exe = _ufora_exe()
+        res = subprocess.run([exe, "refresh"], capture_output=True, text=True, timeout=45)
+        if res.returncode == 0:
+            return True
+    except Exception:
+        pass
+
+    # 2. Try in-process via ufora_cli
+    try:
+        import importlib
+
+        d2l_entry = importlib.import_module("ufora_cli.d2l_entry")
+        d2l_entry._patch_session()
+        auth_cmd = importlib.import_module("d2l.commands.auth_cmd")
+        return bool(auth_cmd.attempt_auto_login())
+    except Exception:
+        pass
+
+    return False
+
+
 def check_auth_status() -> tuple[bool, str]:
     """Fast local check of UGent Ufora authentication without hanging child processes."""
     token_file = get_token_file()
@@ -234,6 +262,34 @@ def check_auth_status() -> tuple[bool, str]:
         now = time.time()
         if now > exp:
             return False, "Session expired"
+        return True, f"Logged in ({user})"
+    except Exception as exc:
+        return False, f"Token error ({exc})"
+
+
+def ensure_authenticated(min_remaining_seconds: int = 180) -> tuple[bool, str]:
+    """Ensure the user is authenticated, silently renewing expired or near-expiry tokens.
+
+    If the token is expired or expires within ``min_remaining_seconds``,
+    attempts a silent background renewal using the saved SSO session.
+    """
+    token_file = get_token_file()
+    if not token_file.exists():
+        browser_profile = Path.home() / ".d2l" / "browser_profile"
+        if browser_profile.exists() and refresh_session():
+            return check_auth_status()
+        return False, "Not logged in"
+
+    try:
+        data = json.loads(token_file.read_text(encoding="utf-8"))
+        exp = data.get("exp", 0)
+        user = data.get("user_id") or data.get("sub") or "User"
+        now = time.time()
+        if now + min_remaining_seconds >= exp:
+            if refresh_session():
+                return check_auth_status()
+            if now > exp:
+                return False, "Session expired"
         return True, f"Logged in ({user})"
     except Exception as exc:
         return False, f"Token error ({exc})"

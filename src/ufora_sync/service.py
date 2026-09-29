@@ -14,7 +14,7 @@ from ufora_sync.lock import ProcessLock
 from ufora_sync.sync import (
     SyncConfig,
     SyncResult,
-    check_auth_status,
+    ensure_authenticated,
     list_courses,
     sync_course_all,
 )
@@ -143,7 +143,7 @@ class SyncService:
         sync_dir = Path(self.config.sync_dir).expanduser()
         sync_dir.mkdir(parents=True, exist_ok=True)
 
-        is_auth, auth_msg = check_auth_status()
+        is_auth, auth_msg = ensure_authenticated()
         if not is_auth:
             self._notify_status(f"Auth needed: {auth_msg}")
             self._notify_log(f"⚠ {auth_msg}. Run 'ufora login' or use Login button in Settings.")

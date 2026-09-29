@@ -16,7 +16,7 @@ from ufora_sync.service import SyncService
 from ufora_sync.sync import (
     ConflictStrategy,
     CourseInfo,
-    check_auth_status,
+    ensure_authenticated,
     get_student_name,
     list_courses,
 )
@@ -556,7 +556,7 @@ class UforaSyncApp(ctk.CTk):
     # ------------------------------------------------------------------
 
     def _refresh_courses(self) -> None:
-        is_auth, auth_msg = check_auth_status()
+        is_auth, auth_msg = ensure_authenticated()
         student_name = get_student_name() if is_auth else ""
 
         if is_auth:

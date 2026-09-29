@@ -9,7 +9,7 @@ import time
 
 from ufora_sync.config import AppConfig
 from ufora_sync.service import SyncService
-from ufora_sync.sync import check_auth_status
+from ufora_sync.sync import ensure_authenticated
 
 
 def run_headless_service() -> None:
@@ -32,7 +32,7 @@ def run_oneshot_sync() -> None:
     """Perform a single immediate sync pass and exit."""
     print("🎓 Ufora Sync — One-shot Sync")
     config = AppConfig.load()
-    is_auth, msg = check_auth_status()
+    is_auth, msg = ensure_authenticated()
     if not is_auth:
         print(f"Error: {msg}. Run 'ufora login' first.")
         sys.exit(1)
