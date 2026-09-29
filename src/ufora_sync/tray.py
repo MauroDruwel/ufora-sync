@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 from ufora_sync.config import AppConfig
 from ufora_sync.service import SyncService
@@ -18,7 +18,7 @@ from ufora_sync.service import SyncService
 logger = logging.getLogger("ufora_sync.tray")
 
 
-def create_tray_icon_image(status: str = "idle") -> Image.Image:
+def create_tray_icon_image(status: str = "idle", angle: int = 0) -> Image.Image:
     """Dynamically generate a crisp native icon with status indicator."""
     if sys.platform == "darwin":
         # Render high-res anti-aliased mask for macOS menu bar (Retina 44x44)
@@ -35,11 +35,16 @@ def create_tray_icon_image(status: str = "idle") -> Image.Image:
 
         st = status.lower()
         if "sync" in st:
-            # Cutout circulating sync arrows
-            draw.arc([46, 48, 82, 84], start=30, end=190, fill=0, width=6)
-            draw.arc([46, 48, 82, 84], start=210, end=370, fill=0, width=6)
-            draw.polygon([(46, 68), (56, 64), (52, 76)], fill=0)
-            draw.polygon([(82, 64), (72, 68), (76, 56)], fill=0)
+            # Bold circulating sync arrows cutout with rotation support
+            arrows = Image.new("L", (size, size), 0)
+            adraw = ImageDraw.Draw(arrows)
+            adraw.arc([42, 44, 86, 88], start=25, end=190, fill=255, width=8)
+            adraw.arc([42, 44, 86, 88], start=205, end=370, fill=255, width=8)
+            adraw.polygon([(42, 70), (54, 64), (48, 80)], fill=255)
+            adraw.polygon([(86, 62), (74, 68), (80, 52)], fill=255)
+            if angle != 0:
+                arrows = arrows.rotate(-angle, center=(64, 66), resample=Image.BICUBIC)
+            mask = ImageChops.subtract(mask, arrows)
         elif "pause" in st:
             # Two vertical pause bars
             draw.rounded_rectangle([56, 54, 62, 78], radius=2, fill=0)
@@ -105,10 +110,13 @@ class TrayApp:
         self.on_quit_callback = on_quit
         self._icon: Any = None
         self._current_status = "Idle"
+        self._anim_thread: threading.Thread | None = None
+        self._anim_stop = threading.Event()
+        self._anim_lock = threading.Lock()
 
         self.service.add_status_listener(self._on_service_status)
 
-    def _apply_macos_template_mode(self) -> None:
+    def _apply_macos_template_mode(self, pil_image: Image.Image | None = None) -> None:
         """Apply native macOS template styling and Retina 2x sizing to the menu bar icon."""
         if sys.platform != "darwin" or not self._icon or not hasattr(self._icon, "_status_item"):
             return
@@ -118,8 +126,12 @@ class TrayApp:
             import AppKit
             import Foundation
 
+            img = pil_image or getattr(self._icon, "_icon", None)
+            if not img:
+                return
+
             b = io.BytesIO()
-            self._icon._icon.save(b, "png")
+            img.save(b, "png")
             data = Foundation.NSData.dataWithBytes_length_(b.getvalue(), len(b.getvalue()))
             ns_img = AppKit.NSImage.alloc().initWithData_(data)
             ns_img.setSize_(AppKit.NSMakeSize(22, 22))
@@ -134,24 +146,99 @@ class TrayApp:
 
     def _on_service_status(self, status: str) -> None:
         self._current_status = status
-        if self._icon:
+        is_syncing = "sync" in status.lower()
+
+        if is_syncing:
+            self._start_sync_animation()
+        else:
+            self._stop_sync_animation()
+            self._update_icon_and_menu(status)
+
+    def _update_icon_and_menu(self, status: str) -> None:
+        def _do_update() -> None:
+            if not self._icon:
+                return
             try:
-                kind = "syncing" if "sync" in status.lower() else "idle"
+                kind = "idle"
                 if "error" in status.lower() or "auth" in status.lower():
                     kind = "error"
                 elif self.service.is_paused:
                     kind = "paused"
-                self._icon.icon = create_tray_icon_image(kind)
+                img = create_tray_icon_image(kind)
+                self._icon.icon = img
                 self._icon.title = f"Ufora Sync — {status}"
-                self._apply_macos_template_mode()
+                self._apply_macos_template_mode(img)
+                self._icon.update_menu()
             except Exception as e:
-                logger.debug("Failed updating tray icon: %s", e)
+                logger.debug("Failed updating tray: %s", e)
+
+        if sys.platform == "darwin":
+            try:
+                import PyObjCTools.AppHelper
+
+                PyObjCTools.AppHelper.callAfter(_do_update)
+                return
+            except Exception:
+                pass
+        _do_update()
+
+    def _start_sync_animation(self) -> None:
+        with self._anim_lock:
+            if self._anim_thread and self._anim_thread.is_alive():
+                return
+            self._anim_stop.clear()
+            self._anim_thread = threading.Thread(
+                target=self._animation_loop, daemon=True, name="UforaTrayAnim"
+            )
+            self._anim_thread.start()
+
+    def _animation_loop(self) -> None:
+        angle = 0
+        while not self._anim_stop.is_set():
+            def _tick(current_deg: int = angle) -> None:
+                if not self._icon or self._anim_stop.is_set():
+                    return
+                try:
+                    img = create_tray_icon_image("syncing", angle=current_deg)
+                    self._icon.icon = img
+                    self._icon.title = f"Ufora Sync — {self._current_status}"
+                    self._apply_macos_template_mode(img)
+                    self._icon.update_menu()
+                except Exception as e:
+                    logger.debug("Error in anim tick: %s", e)
+
+            if sys.platform == "darwin":
+                try:
+                    import PyObjCTools.AppHelper
+
+                    PyObjCTools.AppHelper.callAfter(_tick)
+                except Exception:
+                    _tick()
+            else:
+                _tick()
+
+            angle = (angle + 45) % 360
+            if self._anim_stop.wait(0.25):
+                break
+
+    def _stop_sync_animation(self) -> None:
+        self._anim_stop.set()
+        with self._anim_lock:
+            if self._anim_thread and self._anim_thread.is_alive():
+                self._anim_thread.join(timeout=0.6)
+            self._anim_thread = None
 
     def _get_menu_items(self) -> list[Any]:
-
         import pystray
 
         status_text = f"● {self._current_status}"
+        if not self._current_status or self._current_status.lower() in ("idle", "running"):
+            config = AppConfig.load()
+            if config.last_sync_time:
+                status_text = f"● Up to date ({config.last_sync_time.split()[-1]})"
+            else:
+                status_text = "● Up to date"
+
         pause_label = "▶ Resume Syncing" if self.service.is_paused else "⏸ Pause Syncing"
 
         def _action_settings(icon, item):
@@ -210,6 +297,7 @@ class TrayApp:
         return t
 
     def stop(self) -> None:
+        self._stop_sync_animation()
         if self._icon:
             import contextlib
 

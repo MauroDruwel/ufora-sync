@@ -13,7 +13,12 @@ import customtkinter as ctk
 
 from ufora_sync.autostart import disable_autostart, enable_autostart, is_autostart_enabled
 from ufora_sync.config import AppConfig
-from ufora_sync.service import SyncService
+from ufora_sync.service import (
+    SyncService,
+    append_activity_log,
+    get_activity_log_path,
+    read_service_status,
+)
 from ufora_sync.sync import (
     ConflictStrategy,
     CourseInfo,
@@ -175,10 +180,13 @@ class UforaSyncApp(ctk.CTk):
         self._sync_desc_var = ctk.BooleanVar(value=self.config.sync_descriptions)
         self._sync_links_var = ctk.BooleanVar(value=self.config.sync_links)
         self._autostart_var = ctk.BooleanVar(value=is_autostart_enabled())
+        self._last_log_size: int = 0
+        self._is_local_syncing: bool = False
 
         self._build_ui()
         self._bind_service_events()
         self._refresh_courses()
+        self.after(500, self._poll_daemon_state)
 
     def _bind_service_events(self) -> None:
         if self.service:
@@ -585,6 +593,7 @@ class UforaSyncApp(ctk.CTk):
             activate_scrollbars=True,
         )
         self._log_text.pack(fill="both", expand=True, padx=2, pady=4)
+        self._load_initial_logs()
 
     # ------------------------------------------------------------------
     # Actions & Handlers
@@ -713,12 +722,58 @@ class UforaSyncApp(ctk.CTk):
             ok, msg = disable_autostart()
             self._append_log(f"Auto-start: {msg}")
 
+    def _load_initial_logs(self) -> None:
+        """Populate the log view with the most recent lines from the persistent activity log."""
+        log_path = get_activity_log_path()
+        if log_path.exists():
+            try:
+                content = log_path.read_text(encoding="utf-8", errors="replace")
+                lines = content.splitlines()[-300:]
+                if lines:
+                    self._log_text.insert("end", "\n".join(lines) + "\n")
+                    self._log_text.see("end")
+                self._last_log_size = log_path.stat().st_size
+            except Exception:
+                self._last_log_size = 0
+        else:
+            self._last_log_size = 0
+
+    def _poll_daemon_state(self) -> None:
+        """Periodically stream new activity logs and sync daemon status."""
+        try:
+            log_path = get_activity_log_path()
+            if log_path.exists():
+                size = log_path.stat().st_size
+                if size > self._last_log_size:
+                    with log_path.open("r", encoding="utf-8", errors="replace") as f:
+                        f.seek(self._last_log_size)
+                        new_content = f.read()
+                        self._last_log_size = f.tell()
+                    if new_content and hasattr(self, "_log_text"):
+                        self._log_text.insert("end", new_content)
+                        self._log_text.see("end")
+                elif size < self._last_log_size:
+                    self._last_log_size = 0
+                    if hasattr(self, "_log_text"):
+                        self._log_text.delete("1.0", "end")
+        except Exception:
+            pass
+
+        # Update status if daemon status file changed and not doing a local sync pass
+        if not getattr(self, "_is_local_syncing", False):
+            daemon_status = read_service_status()
+            if daemon_status and daemon_status not in ("Initialized", "Idle"):
+                self._update_service_status(daemon_status)
+
+        self.after(1000, self._poll_daemon_state)
+
     def _pick_sync_folder(self) -> None:
         chosen = filedialog.askdirectory(title="Select Ufora Sync Folder")
         if chosen:
             self._sync_dir_var.set(chosen)
 
     def _trigger_sync(self) -> None:
+        self._is_local_syncing = True
         self._sync_now_btn.configure(state="disabled", text="Syncing…")
         self._append_log("Starting sync pass…")
 
@@ -730,6 +785,7 @@ class UforaSyncApp(ctk.CTk):
             try:
                 active_service._do_sync_pass()
             finally:
+                self._is_local_syncing = False
                 self.after(
                     0,
                     lambda: self._sync_now_btn.configure(state="normal", text="🔄 Sync Now"),
@@ -780,11 +836,21 @@ class UforaSyncApp(ctk.CTk):
             self._append_log(f"Sign out error: {e}")
 
     def _append_log(self, text: str) -> None:
-        self._log_text.insert("end", text + "\n")
-        self._log_text.see("end")
+        append_activity_log(text)
+        if hasattr(self, "_log_text"):
+            self._log_text.insert("end", text + "\n")
+            self._log_text.see("end")
 
     def _clear_log(self) -> None:
-        self._log_text.delete("1.0", "end")
+        if hasattr(self, "_log_text"):
+            self._log_text.delete("1.0", "end")
+        log_path = get_activity_log_path()
+        if log_path.exists():
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                log_path.write_text("", encoding="utf-8")
+        self._last_log_size = 0
 
     def _on_close(self) -> None:
         self.destroy()

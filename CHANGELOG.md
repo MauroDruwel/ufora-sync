@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-09-29
+
+### Added
+- **Animated Syncing Icon**: Smooth rotating sync arrows animation in the macOS menu bar while sync is in progress, returning to the static clean cloud silhouette immediately when sync completes.
+- **Persistent Activity Logging (`activity.log`)**: All daemon and sync activity is recorded to a persistent, bounded log file (`~/Library/Application Support/ufora-sync/activity.log`) across all processes and runs.
+- **Live GUI Log Stream**: The Settings window Activity Log tab automatically tails the daemon's log in real time, so all background syncing activity is immediately visible even when running as separate processes.
+- **Cross-Process Status Synchronization**: Daemon state (`service_status.txt`) is persisted to disk and polled live by the GUI window.
+
+### Fixed
+- **Stuck Tray Status Menu**: Fixed an issue where the menu item remained stuck on `● Syncing…` after sync completed by calling `icon.update_menu()` and dispatching thread-safe UI updates on macOS via `PyObjCTools.AppHelper.callAfter`.
+- **Empty Settings Activity Log**: Resolved disconnect between the background tray daemon and standalone Settings GUI window by streaming the shared persistent activity log.
+
 ## [0.2.3] - 2026-09-29
 
 ### Added

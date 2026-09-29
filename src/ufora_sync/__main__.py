@@ -60,6 +60,7 @@ def run_desktop_app() -> None:
 
     config = AppConfig.load()
     service = SyncService(config=config)
+    service.add_log_listener(lambda line: print(line))
     service.start()
 
     # If first run or no courses enabled yet, launch GUI so user can configure

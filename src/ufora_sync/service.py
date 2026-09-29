@@ -22,6 +22,61 @@ from ufora_sync.sync import (
 logger = logging.getLogger("ufora_sync.service")
 
 
+def get_activity_log_path() -> Path:
+    """Return the path to the persistent activity log file."""
+    config_dir = get_default_config_dir()
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / "activity.log"
+
+
+def get_service_status_path() -> Path:
+    """Return the path to the current service status file."""
+    config_dir = get_default_config_dir()
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / "service_status.txt"
+
+
+def append_activity_log(text: str) -> None:
+    """Append a timestamped log line to the persistent activity log."""
+    try:
+        log_path = get_activity_log_path()
+        if log_path.exists() and log_path.stat().st_size > 2 * 1024 * 1024:
+            content = log_path.read_text(encoding="utf-8", errors="replace")
+            log_path.write_text(content[-512 * 1024 :], encoding="utf-8")
+
+        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        clean_text = text.rstrip("\n")
+        line = (
+            f"[{timestamp_str}] {clean_text}\n"
+            if not clean_text.startswith("[20")
+            else f"{clean_text}\n"
+        )
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception as exc:
+        logger.debug("Failed writing to activity.log: %s", exc)
+
+
+def write_service_status(status: str) -> None:
+    """Persist current service status to disk so other processes can observe it."""
+    try:
+        path = get_service_status_path()
+        path.write_text(status, encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Failed writing service status: %s", exc)
+
+
+def read_service_status() -> str:
+    """Read the latest service status persisted to disk."""
+    try:
+        path = get_service_status_path()
+        if path.exists():
+            return path.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    return "Idle"
+
+
 class SyncService:
     """Continuous background sync daemon."""
 
@@ -53,6 +108,7 @@ class SyncService:
 
     def _notify_status(self, status: str) -> None:
         self.last_status = status
+        write_service_status(status)
         for cb in list(self.status_listeners):
             try:
                 cb(status)
@@ -60,6 +116,7 @@ class SyncService:
                 logger.debug("Error in status callback: %s", e)
 
     def _notify_log(self, text: str) -> None:
+        append_activity_log(text)
         for cb in list(self.log_listeners):
             try:
                 cb(text)

@@ -81,3 +81,44 @@ def test_service_lock_prevents_concurrent_sync(monkeypatch, tmp_path: Path):
     assert not service.is_syncing
 
     external_lock.release()
+
+
+def test_activity_log_persistence(monkeypatch, tmp_path: Path):
+    from ufora_sync.service import append_activity_log, get_activity_log_path
+
+    monkeypatch.setattr("ufora_sync.service.get_default_config_dir", lambda: tmp_path)
+    log_path = get_activity_log_path()
+    assert not log_path.exists()
+
+    append_activity_log("First sync event")
+    append_activity_log("Second sync event")
+
+    assert log_path.exists()
+    content = log_path.read_text(encoding="utf-8")
+    assert "First sync event" in content
+    assert "Second sync event" in content
+
+
+def test_service_status_persistence(monkeypatch, tmp_path: Path):
+    from ufora_sync.service import read_service_status, write_service_status
+
+    monkeypatch.setattr("ufora_sync.service.get_default_config_dir", lambda: tmp_path)
+    write_service_status("Syncing: Wiskunde I…")
+    assert read_service_status() == "Syncing: Wiskunde I…"
+
+    write_service_status("Up to date")
+    assert read_service_status() == "Up to date"
+
+
+def test_tray_icon_rendering_all_states():
+    from ufora_sync.tray import create_tray_icon_image
+
+    for state in ("idle", "syncing", "paused", "error"):
+        img = create_tray_icon_image(state)
+        assert img is not None
+        assert img.size[0] > 0 and img.size[1] > 0
+
+    # Test rotation angle
+    rot_img = create_tray_icon_image("syncing", angle=90)
+    assert rot_img is not None
+    assert rot_img.size == img.size
