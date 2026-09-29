@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ufora-sync"
-version = "0.2.2"
+version = "0.2.3"
 description = "Unofficial background sync service and tray application for UGent Ufora"
 readme = "README.md"
 requires-python = ">=3.11"

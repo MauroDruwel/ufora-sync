@@ -11,6 +11,7 @@ from typing import Any
 
 import customtkinter as ctk
 
+from ufora_sync.autostart import disable_autostart, enable_autostart, is_autostart_enabled
 from ufora_sync.config import AppConfig
 from ufora_sync.service import SyncService
 from ufora_sync.sync import (
@@ -173,6 +174,7 @@ class UforaSyncApp(ctk.CTk):
         self._suffix_var = ctk.StringVar(value=self.config.duplicate_suffix)
         self._sync_desc_var = ctk.BooleanVar(value=self.config.sync_descriptions)
         self._sync_links_var = ctk.BooleanVar(value=self.config.sync_links)
+        self._autostart_var = ctk.BooleanVar(value=is_autostart_enabled())
 
         self._build_ui()
         self._bind_service_events()
@@ -452,6 +454,22 @@ class UforaSyncApp(ctk.CTk):
             hover_color=ACCENT_HOVER,
         ).pack(anchor="w", pady=(0, 20))
 
+        # 4. System Startup
+        ctk.CTkLabel(form, text="System Startup", font=FONT_HEADING, text_color=FG_TEXT).pack(
+            anchor="w", pady=(0, 4)
+        )
+
+        ctk.CTkCheckBox(
+            form,
+            text="Launch Ufora Sync automatically when logging into computer",
+            variable=self._autostart_var,
+            font=FONT_BODY,
+            text_color=FG_TEXT,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+            command=self._on_toggle_autostart,
+        ).pack(anchor="w", pady=(0, 20))
+
         # Save Settings Action
         ctk.CTkButton(
             form,
@@ -464,7 +482,7 @@ class UforaSyncApp(ctk.CTk):
             command=self._save_settings,
         ).pack(anchor="w", pady=(0, 24))
 
-        # 4. Account & Authentication Management
+        # 5. Account & Authentication Management
         ctk.CTkLabel(form, text="Account & Session", font=FONT_HEADING, text_color=FG_TEXT).pack(
             anchor="w", pady=(0, 4)
         )
@@ -502,7 +520,24 @@ class UforaSyncApp(ctk.CTk):
             command=self._do_login,
         ).pack(side="right", padx=4, pady=12)
 
-        # 5. Unofficial Disclaimer Notice
+        # 6. Version & Disclaimer Footer
+        from ufora_sync import __version__
+
+        ufora_cli_version = ""
+        try:
+            import ufora_cli
+
+            ufora_cli_version = f"  •  Ufora AI v{ufora_cli.__version__}"
+        except Exception:
+            pass
+
+        ctk.CTkLabel(
+            form,
+            text=f"Ufora Sync v{__version__}{ufora_cli_version}",
+            font=FONT_SMALL,
+            text_color=FG_MUTED,
+        ).pack(anchor="w", pady=(12, 2))
+
         ctk.CTkLabel(
             form,
             text=(
@@ -513,7 +548,7 @@ class UforaSyncApp(ctk.CTk):
             text_color=FG_MUTED,
             justify="left",
             wraplength=600,
-        ).pack(anchor="w", pady=(16, 8))
+        ).pack(anchor="w", pady=(0, 8))
 
     # ------------------------------------------------------------------
     # Logs Tab
@@ -665,6 +700,18 @@ class UforaSyncApp(ctk.CTk):
         self.config.save()
         self._append_log("Configuration saved successfully.")
         messagebox.showinfo("Ufora Sync", "Settings saved!")
+
+    def _on_toggle_autostart(self) -> None:
+        if self._autostart_var.get():
+            ok, msg = enable_autostart()
+            if not ok:
+                self._autostart_var.set(False)
+                messagebox.showerror("Auto-Start Error", msg)
+            else:
+                self._append_log(f"Auto-start: {msg}")
+        else:
+            ok, msg = disable_autostart()
+            self._append_log(f"Auto-start: {msg}")
 
     def _pick_sync_folder(self) -> None:
         chosen = filedialog.askdirectory(title="Select Ufora Sync Folder")

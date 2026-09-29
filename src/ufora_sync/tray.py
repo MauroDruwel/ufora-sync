@@ -19,40 +19,65 @@ logger = logging.getLogger("ufora_sync.tray")
 
 
 def create_tray_icon_image(status: str = "idle") -> Image.Image:
-    """Dynamically generate a sleek modern cloud icon with status indicator."""
-    size = (64, 64)
-    image = Image.new("RGBA", size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
+    """Dynamically generate a crisp native icon with status indicator."""
+    if sys.platform == "darwin":
+        # Render high-res anti-aliased mask for macOS menu bar (Retina 44x44)
+        size = 128
+        target_size = 44
+        mask = Image.new("L", (size, size), 0)
+        draw = ImageDraw.Draw(mask)
 
-    # Cloud body in sleek blue / indigo
-    cloud_color = (66, 133, 244, 255)  # Modern blue
-    # Base rounded pill
-    draw.rounded_rectangle([12, 28, 52, 50], radius=11, fill=cloud_color)
-    # Left puff
-    draw.ellipse([16, 20, 36, 40], fill=cloud_color)
-    # Right puff
-    draw.ellipse([28, 14, 48, 38], fill=cloud_color)
+        # Clean Apple-style cloud silhouette
+        draw.rounded_rectangle([20, 58, 108, 98], radius=20, fill=255)
+        draw.ellipse([26, 42, 70, 86], fill=255)
+        draw.ellipse([48, 26, 92, 70], fill=255)
+        draw.ellipse([72, 46, 104, 78], fill=255)
 
-    if status == "syncing":
-        # Green pulsing sync badge with white border
+        st = status.lower()
+        if "sync" in st:
+            # Cutout circulating sync arrows
+            draw.arc([46, 48, 82, 84], start=30, end=190, fill=0, width=6)
+            draw.arc([46, 48, 82, 84], start=210, end=370, fill=0, width=6)
+            draw.polygon([(46, 68), (56, 64), (52, 76)], fill=0)
+            draw.polygon([(82, 64), (72, 68), (76, 56)], fill=0)
+        elif "pause" in st:
+            # Two vertical pause bars
+            draw.rounded_rectangle([56, 54, 62, 78], radius=2, fill=0)
+            draw.rounded_rectangle([66, 54, 72, 78], radius=2, fill=0)
+        elif "error" in st or "auth" in st or "fail" in st:
+            # Exclamation mark
+            draw.rounded_rectangle([61, 50, 67, 70], radius=2, fill=0)
+            draw.ellipse([61, 74, 67, 80], fill=0)
+
+        small_mask = mask.resize((target_size, target_size), Image.LANCZOS)
+        rgba = Image.new("RGBA", (target_size, target_size), (255, 255, 255, 255))
+        rgba.putalpha(small_mask)
+        return rgba
+
+    # Non-macOS (Windows, Linux): colorful cloud with crisp indicator badge
+    size = 128
+    target_size = 64
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    cloud_color = (66, 133, 244, 255)
+    draw.rounded_rectangle([20, 58, 108, 98], radius=20, fill=cloud_color)
+    draw.ellipse([26, 42, 70, 86], fill=cloud_color)
+    draw.ellipse([48, 26, 92, 70], fill=cloud_color)
+    draw.ellipse([72, 46, 104, 78], fill=cloud_color)
+
+    st = status.lower()
+    if "sync" in st:
         badge_fill = (34, 197, 94, 255)
-        draw.ellipse([40, 36, 58, 54], fill=badge_fill, outline=(255, 255, 255, 255), width=2)
-        # Inner white sync dot
-        draw.ellipse([46, 42, 52, 48], fill=(255, 255, 255, 255))
-    elif status == "paused":
-        # Yellow pause badge
+    elif "pause" in st:
         badge_fill = (234, 179, 8, 255)
-        draw.ellipse([40, 36, 58, 54], fill=badge_fill, outline=(255, 255, 255, 255), width=2)
-    elif "error" in status.lower() or "auth" in status.lower() or "failed" in status.lower():
-        # Red warning badge
+    elif "error" in st or "auth" in st or "fail" in st:
         badge_fill = (239, 68, 68, 255)
-        draw.ellipse([40, 36, 58, 54], fill=badge_fill, outline=(255, 255, 255, 255), width=2)
     else:
-        # Subtle idle badge (gentle teal)
         badge_fill = (52, 211, 153, 255)
-        draw.ellipse([42, 38, 56, 52], fill=badge_fill, outline=(255, 255, 255, 255), width=2)
 
-    return image
+    draw.ellipse([80, 70, 114, 104], fill=badge_fill, outline=(255, 255, 255, 255), width=4)
+    return img.resize((target_size, target_size), Image.LANCZOS)
 
 
 def open_folder_in_os(path: Path | str) -> None:
@@ -83,6 +108,30 @@ class TrayApp:
 
         self.service.add_status_listener(self._on_service_status)
 
+    def _apply_macos_template_mode(self) -> None:
+        """Apply native macOS template styling and Retina 2x sizing to the menu bar icon."""
+        if sys.platform != "darwin" or not self._icon or not hasattr(self._icon, "_status_item"):
+            return
+        try:
+            import io
+
+            import AppKit
+            import Foundation
+
+            b = io.BytesIO()
+            self._icon._icon.save(b, "png")
+            data = Foundation.NSData.dataWithBytes_length_(b.getvalue(), len(b.getvalue()))
+            ns_img = AppKit.NSImage.alloc().initWithData_(data)
+            ns_img.setSize_(AppKit.NSMakeSize(22, 22))
+            ns_img.setTemplate_(True)
+
+            button = self._icon._status_item.button()
+            if button:
+                button.setImage_(ns_img)
+                self._icon._icon_image = ns_img
+        except Exception as e:
+            logger.debug("Failed applying macOS template mode: %s", e)
+
     def _on_service_status(self, status: str) -> None:
         self._current_status = status
         if self._icon:
@@ -94,6 +143,7 @@ class TrayApp:
                     kind = "paused"
                 self._icon.icon = create_tray_icon_image(kind)
                 self._icon.title = f"Ufora Sync — {status}"
+                self._apply_macos_template_mode()
             except Exception as e:
                 logger.debug("Failed updating tray icon: %s", e)
 
@@ -142,13 +192,16 @@ class TrayApp:
         """Run the tray icon event loop (blocking)."""
         import pystray
 
+        def setup(icon: Any) -> None:
+            self._apply_macos_template_mode()
+
         self._icon = pystray.Icon(
             name="ufora_sync",
             icon=create_tray_icon_image("idle"),
             title="Ufora Sync",
             menu=pystray.Menu(lambda: self._get_menu_items()),
         )
-        self._icon.run()
+        self._icon.run(setup=setup)
 
     def run_detached(self) -> threading.Thread:
         """Run the tray icon in a dedicated background thread."""

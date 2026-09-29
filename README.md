@@ -85,6 +85,20 @@ ufora-sync service
 ufora-sync sync
 ```
 
+### Auto-Start on System Login
+Enable or manage launching Ufora Sync in the background whenever you log into your computer:
+```bash
+ufora-sync autostart enable   # Register LaunchAgent (macOS) / desktop entry (Linux) / registry (Windows)
+ufora-sync autostart disable  # Unregister startup task
+ufora-sync autostart status   # Check current autostart status
+```
+*(You can also toggle this with a single click inside the Settings GUI!)*
+
+### Check Version
+```bash
+ufora-sync --version
+```
+
 ---
 
 ## ⚙️ Configuration

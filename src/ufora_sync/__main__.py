@@ -85,6 +85,8 @@ def run_desktop_app() -> None:
 
 
 def main() -> None:
+    from ufora_sync import __version__
+
     parser = argparse.ArgumentParser(
         prog="ufora-sync",
         description=(
@@ -93,14 +95,27 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--version",
+        "-v",
+        action="version",
+        version=f"ufora-sync {__version__}",
+    )
+    parser.add_argument(
         "command",
         nargs="?",
         default="tray",
-        choices=["tray", "gui", "service", "sync", "login"],
+        choices=["tray", "gui", "service", "sync", "login", "autostart"],
         help=(
             "Command to run: 'tray' (default, menu bar app), 'gui' (settings window), "
-            "'service' (headless daemon), 'sync' (one-off sync), 'login'"
+            "'service' (headless daemon), 'sync' (one-off sync), 'login', 'autostart'"
         ),
+    )
+    parser.add_argument(
+        "autostart_action",
+        nargs="?",
+        default="status",
+        choices=["status", "enable", "disable"],
+        help="Action for 'autostart' command: 'status' (default), 'enable', 'disable'",
     )
 
     args = parser.parse_args()
@@ -113,6 +128,21 @@ def main() -> None:
         import subprocess
 
         subprocess.run(["ufora", "login"])
+    elif args.command == "autostart":
+        from ufora_sync.autostart import disable_autostart, enable_autostart, is_autostart_enabled
+
+        action = args.autostart_action
+        if action == "enable":
+            ok, msg = enable_autostart()
+            print(msg if ok else f"Error: {msg}")
+            sys.exit(0 if ok else 1)
+        elif action == "disable":
+            ok, msg = disable_autostart()
+            print(msg if ok else f"Error: {msg}")
+            sys.exit(0 if ok else 1)
+        else:
+            enabled = is_autostart_enabled()
+            print(f"Ufora Sync auto-start on login: {'ENABLED' if enabled else 'DISABLED'}")
     elif args.command == "gui":
         from ufora_sync.app import UforaSyncApp
 

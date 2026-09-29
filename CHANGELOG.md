@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-09-29
+
+### Added
+- **Native macOS Menu Bar Styling (Retina Template Mode)**: Redesigned the tray icon specifically for the macOS menu bar. Uses a crisp 44x44 (2x Retina) anti-aliased template mask (`setTemplate_(True)` on `NSImage`), seamlessly blending with macOS native monochrome menu bar icons (Wi-Fi, Battery, Control Center). Automatically tints for Light and Dark modes as well as macOS desktop wallpaper accents. Status states (syncing, paused, error) feature crisp geometric cutouts. Full-color badges remain for Windows and Linux.
+- **Cross-Platform Auto-Start on System Startup**: Added native background auto-launch support on user login:
+  - **macOS**: Native user LaunchAgent (`~/Library/LaunchAgents/com.maurodruwel.ufora-sync.plist`).
+  - **Linux**: XDG Autostart desktop entry (`~/.config/autostart/ufora-sync.desktop`).
+  - **Windows**: Windows registry Run key (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
+- **Auto-Start GUI & CLI Controls**: Added a 1-click checkbox ("Launch Ufora Sync automatically when logging into computer") in the Settings window, and new CLI commands: `ufora-sync autostart [status|enable|disable]`.
+- **Version Reporting**: Added `--version` / `-v` flag to `ufora-sync` CLI, and added a version footer in the Settings window displaying both `ufora-sync` and underlying `ufora-ai` engine versions.
+
 ## [0.2.2] - 2026-09-29
 
 ### Added
