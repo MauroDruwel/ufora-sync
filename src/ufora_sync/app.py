@@ -773,6 +773,14 @@ class UforaSyncApp(ctk.CTk):
             self._sync_dir_var.set(chosen)
 
     def _trigger_sync(self) -> None:
+        from ufora_sync.ipc import is_daemon_running, request_daemon_sync
+
+        if is_daemon_running():
+            self._sync_now_btn.configure(state="disabled", text="Syncing…")
+            self._append_log("Requested sync from running background service…")
+            request_daemon_sync()
+            return
+
         self._is_local_syncing = True
         self._sync_now_btn.configure(state="disabled", text="Syncing…")
         self._append_log("Starting sync pass…")

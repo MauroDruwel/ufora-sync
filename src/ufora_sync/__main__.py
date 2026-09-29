@@ -14,10 +14,20 @@ from ufora_sync.sync import ensure_authenticated
 
 def run_headless_service() -> None:
     """Run the background sync service in terminal / daemon mode."""
+    from ufora_sync.ipc import IPCWatcher, get_daemon_lock
+
+    daemon_lock = get_daemon_lock()
+    if not daemon_lock.acquire():
+        print("Error: Ufora Sync background daemon is already running.")
+        sys.exit(1)
+
     print("🎓 Ufora Sync — Headless Background Service")
     service = SyncService()
     service.add_log_listener(lambda line: print(line))
     service.start()
+
+    ipc_watcher = IPCWatcher(on_sync=service.trigger_sync)
+    ipc_watcher.start()
 
     print("Daemon running. Press Ctrl+C to terminate.")
     try:
@@ -25,18 +35,48 @@ def run_headless_service() -> None:
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nShutting down daemon…")
+        ipc_watcher.stop()
         service.stop()
+        daemon_lock.release()
 
 
 def run_oneshot_sync() -> None:
     """Perform a single immediate sync pass and exit."""
+    from ufora_sync.ipc import is_daemon_running, request_daemon_sync
+    from ufora_sync.service import get_activity_log_path, read_service_status
+
     print("🎓 Ufora Sync — One-shot Sync")
-    config = AppConfig.load()
     is_auth, msg = ensure_authenticated()
     if not is_auth:
         print(f"Error: {msg}. Run 'ufora login' first.")
         sys.exit(1)
 
+    if is_daemon_running():
+        print("Background daemon is running. Triggered immediate sync pass in daemon.")
+        log_path = get_activity_log_path()
+        last_size = log_path.stat().st_size if log_path.exists() else 0
+        request_daemon_sync()
+
+        # Follow activity log until sync pass completes
+        time.sleep(0.5)
+        start_wait = time.time()
+        while time.time() - start_wait < 120:
+            if log_path.exists():
+                cur_size = log_path.stat().st_size
+                if cur_size > last_size:
+                    with log_path.open("r", encoding="utf-8", errors="replace") as f:
+                        f.seek(last_size)
+                        new_data = f.read()
+                        last_size = f.tell()
+                    if new_data:
+                        print(new_data, end="")
+            st = read_service_status()
+            if "Up to date" in st or "Finished" in st or "failed" in st or "error" in st:
+                break
+            time.sleep(0.5)
+        return
+
+    config = AppConfig.load()
     service = SyncService(config=config)
     service.add_log_listener(lambda line: print(line))
     service._do_sync_pass()
@@ -48,20 +88,40 @@ _gui_process: subprocess.Popen | None = None
 def open_settings_gui() -> None:
     """Launch or focus the Settings GUI in a dedicated process."""
     global _gui_process
+    from ufora_sync.ipc import focus_existing_gui, is_gui_running
 
-    if _gui_process is not None and _gui_process.poll() is None:
+    if is_gui_running() or (_gui_process is not None and _gui_process.poll() is None):
+        focus_existing_gui()
         return
+
     _gui_process = subprocess.Popen([sys.executable, "-m", "ufora_sync", "gui"])
 
 
 def run_desktop_app() -> None:
     """Run the system tray app on the main thread with background sync service."""
+    from ufora_sync.ipc import IPCWatcher, focus_existing_gui, get_daemon_lock, request_gui_open
     from ufora_sync.tray import TrayApp
+
+    daemon_lock = get_daemon_lock()
+    if not daemon_lock.acquire():
+        print("Ufora Sync is already running in the background.")
+        request_gui_open()
+        focus_existing_gui()
+        sys.exit(0)
 
     config = AppConfig.load()
     service = SyncService(config=config)
     service.add_log_listener(lambda line: print(line))
     service.start()
+
+    def _open_gui():
+        open_settings_gui()
+
+    ipc_watcher = IPCWatcher(
+        on_sync=service.trigger_sync,
+        on_open_gui=_open_gui,
+    )
+    ipc_watcher.start()
 
     # If first run or no courses enabled yet, launch GUI so user can configure
     if not config.enabled_courses:
@@ -69,14 +129,13 @@ def run_desktop_app() -> None:
     else:
         print("Ufora Sync running in background menu bar / taskbar.")
 
-    def _open_gui():
-        open_settings_gui()
-
     def _quit_all():
         global _gui_process
+        ipc_watcher.stop()
         if _gui_process and _gui_process.poll() is None:
             _gui_process.terminate()
         service.stop()
+        daemon_lock.release()
 
     tray = TrayApp(service=service, on_open_gui=_open_gui, on_quit=_quit_all)
     try:
@@ -146,9 +205,19 @@ def main() -> None:
             print(f"Ufora Sync auto-start on login: {'ENABLED' if enabled else 'DISABLED'}")
     elif args.command == "gui":
         from ufora_sync.app import UforaSyncApp
+        from ufora_sync.ipc import focus_existing_gui, get_gui_lock
 
-        app = UforaSyncApp(is_standalone=True)
-        app.mainloop()
+        gui_lock = get_gui_lock()
+        if not gui_lock.acquire():
+            focus_existing_gui()
+            print("Ufora Sync Settings window is already open.")
+            sys.exit(0)
+
+        try:
+            app = UforaSyncApp(is_standalone=True)
+            app.mainloop()
+        finally:
+            gui_lock.release()
     else:
         # Default: tray mode
         run_desktop_app()

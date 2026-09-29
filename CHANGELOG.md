@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-09-29
+
+### Added
+- **Single-Instance Application Enforcement**: Guaranteed single background daemon (`daemon.lock`) and single Settings window (`gui.lock`) per user. Launching `ufora-sync` or `ufora-sync tray` when already running focuses the existing instance instead of starting duplicate background services.
+- **Inter-Process Sync Delegation**: The GUI "Sync Now" button and terminal `ufora-sync sync` command now delegate directly to the running background daemon via lightweight IPC triggers (`trigger.sync`), eliminating duplicate syncer threads and race conditions.
+- **IPC Watcher Engine (`src/ufora_sync/ipc.py`)**: Seamless trigger system coordinating daemon sync requests and GUI focus across processes.
+
 ## [0.2.4] - 2026-09-29
 
 ### Added
