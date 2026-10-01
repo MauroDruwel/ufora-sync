@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-10-01
+
+### Fixed
+- **Sync Directory Migration & Portability**: Completely resolved `ValueError: '...' is not in the subpath of '...'` crashes when moving courses or changing the sync destination (e.g. from local `Documents/Ufora` to cloud storage `OneDrive-UGent/Ufora`).
+- **Relative Path Manifests**: Synced file records (`.ufora_sync_manifest.json`) are now persisted using relative POSIX subpaths instead of machine-specific absolute paths, making manifests fully portable across folders, drives, and cloud storage providers.
+- **Automatic Legacy Manifest Migration**: Existing manifests containing absolute paths are transparently migrated upon load, preserving all remote modification timestamps and local edit detection hashes.
+- **Dynamic GUI Course Card Directory Updates**: Course folder action buttons in the Settings window immediately point to the newly selected destination directory upon saving settings without requiring an application restart.
+
 ## [0.2.5] - 2026-09-29
 
 ### Added

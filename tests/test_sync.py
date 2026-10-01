@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from ufora_sync.sync import ConflictStrategy, SyncConfig, SyncManifest, _sha256
@@ -214,7 +215,65 @@ def test_manifest_preserves_remote_modified(tmp_path: Path) -> None:
     entry = manifest2.get_by_remote_id("topic-100")
     assert entry is not None
     assert entry.remote_modified == "2026-09-28T12:00:00Z"
-    assert entry.local_path == str(f)
+    assert entry.local_path == "lesson.pdf"
+    assert manifest2.resolve_dest(entry) == f
+
+
+def test_safe_rel_path() -> None:
+    from ufora_sync.sync import safe_rel_path
+
+    # Standard subpath
+    assert safe_rel_path("/base/course/file.pdf", "/base/course") == "file.pdf"
+    assert safe_rel_path("/base/course/sub/file.pdf", "/base/course") == "sub/file.pdf"
+
+    # Mismatched root with matching course directory
+    old_path = "/Users/codermauro/Documents/Ufora/Math/Chapter 1/notes.pdf"
+    new_course = "/Users/codermauro/OneDrive/Ufora/Math"
+    assert safe_rel_path(old_path, new_course) == "Chapter 1/notes.pdf"
+
+    # Totally unrelated path falls back to filename
+    assert safe_rel_path("/totally/different/foo.txt", "/base/course") == "foo.txt"
+
+
+def test_manifest_migration_when_folder_moved(tmp_path: Path) -> None:
+    from ufora_sync.sync import MANIFEST_FILENAME
+
+    old_base = tmp_path / "Documents" / "Ufora" / "Wiskunde I"
+    new_base = tmp_path / "OneDrive" / "Ufora" / "Wiskunde I"
+    new_base.mkdir(parents=True)
+
+    # Simulate legacy manifest created in old_base with absolute paths
+    legacy_manifest_data = {
+        "files": {
+            str(old_base / "Werkcolleges" / "oefeningen.pdf"): {
+                "remote_id": "3252766",
+                "remote_path": "Werkcolleges/oefeningen.pdf",
+                "local_path": str(old_base / "Werkcolleges" / "oefeningen.pdf"),
+                "sha256": "abc12345",
+                "synced_at": "2026-09-28T12:00:00Z",
+                "remote_modified": "2026-09-20T10:00:00Z",
+            }
+        }
+    }
+    manifest_file = new_base / MANIFEST_FILENAME
+    manifest_file.write_text(json.dumps(legacy_manifest_data), encoding="utf-8")
+
+    # Load in new directory
+    manifest = SyncManifest(base_dir=new_base)
+    manifest.load()
+
+    entry = manifest.get_by_remote_id("3252766")
+    assert entry is not None
+    assert entry.remote_modified == "2026-09-20T10:00:00Z"
+    # Destination resolves in new_base without raising ValueError
+    resolved = manifest.resolve_dest(entry)
+    assert resolved == new_base / "Werkcolleges" / "oefeningen.pdf"
+
+    # Saving will persist relative path
+    manifest.save()
+    reloaded = json.loads(manifest_file.read_text(encoding="utf-8"))
+    assert "Werkcolleges/oefeningen.pdf" in reloaded["files"]
+    assert str(old_base) not in json.dumps(reloaded)
 
 
 # ---------------------------------------------------------------------------

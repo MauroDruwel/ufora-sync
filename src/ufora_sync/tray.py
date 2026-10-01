@@ -195,6 +195,7 @@ class TrayApp:
     def _animation_loop(self) -> None:
         angle = 0
         while not self._anim_stop.is_set():
+
             def _tick(current_deg: int = angle) -> None:
                 if not self._icon or self._anim_stop.is_set():
                     return

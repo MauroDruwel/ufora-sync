@@ -707,6 +707,12 @@ class UforaSyncApp(ctk.CTk):
         self.config.sync_descriptions = self._sync_desc_var.get()
         self.config.sync_links = self._sync_links_var.get()
         self.config.save()
+
+        # Update sync_dir on all active course cards so "Folder" buttons open the new path
+        new_sync_dir = Path(self.config.sync_dir).expanduser()
+        for card in self._course_cards.values():
+            card.sync_dir = new_sync_dir
+
         self._append_log("Configuration saved successfully.")
         messagebox.showinfo("Ufora Sync", "Settings saved!")
 

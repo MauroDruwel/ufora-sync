@@ -79,7 +79,7 @@ class SyncedFile:
 
     remote_id: str
     remote_path: str  # e.g. "Slides / Lecture 1.pdf"
-    local_path: str  # absolute path on disk
+    local_path: str  # relative POSIX path within course directory
     sha256: str
     synced_at: str  # ISO-8601
     remote_modified: str | None = None  # LastModifiedDate from Brightspace TOC
@@ -108,23 +108,75 @@ class SyncedFile:
         )
 
 
+def safe_rel_path(path: Path | str, base: Path | str) -> str:
+    """Safely return a relative POSIX path string, falling back cleanly if not a direct subpath."""
+    p = Path(path)
+    b = Path(base)
+    try:
+        return str(p.relative_to(b)).replace("\\", "/")
+    except ValueError:
+        pass
+
+    b_name = b.name
+    parts = p.parts
+    if b_name in parts:
+        idx = parts.index(b_name)
+        rel_parts = parts[idx + 1 :]
+        if rel_parts:
+            return str(Path(*rel_parts)).replace("\\", "/")
+    return p.name
+
+
 @dataclass
 class SyncManifest:
     """Tracks files synced to a local directory to detect local edits."""
 
     base_dir: Path
-    files: dict[str, SyncedFile] = field(default_factory=dict)  # key = local_path
+    files: dict[str, SyncedFile] = field(default_factory=dict)
 
     @property
     def _path(self) -> Path:
         return self.base_dir / MANIFEST_FILENAME
+
+    def _to_rel_key(self, path: Path | str, fallback_remote: str | None = None) -> str:
+        """Convert any path (absolute or relative) to a normalized POSIX relative path key."""
+        p = Path(path)
+        if not p.is_absolute():
+            return str(p).replace("\\", "/")
+
+        try:
+            return str(p.relative_to(self.base_dir)).replace("\\", "/")
+        except ValueError:
+            pass
+
+        # If it was saved with a previous sync directory, find the course folder name
+        course_name = self.base_dir.name
+        parts = p.parts
+        if course_name in parts:
+            idx = parts.index(course_name)
+            rel_parts = parts[idx + 1 :]
+            if rel_parts:
+                return str(Path(*rel_parts)).replace("\\", "/")
+
+        if fallback_remote:
+            return str(fallback_remote).replace("\\", "/")
+
+        return p.name
 
     def load(self) -> None:
         if not self._path.exists():
             return
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
-            self.files = {k: SyncedFile.from_dict(v) for k, v in data.get("files", {}).items()}
+            raw_files = data.get("files", {})
+            self.files = {}
+            for k, v in raw_files.items():
+                entry = SyncedFile.from_dict(v)
+                rel_key = self._to_rel_key(entry.local_path or k, fallback_remote=entry.remote_path)
+                entry.local_path = rel_key
+                self.files[rel_key] = entry
+                # Also store absolute path key for backward compatibility lookups
+                self.files[str(self.base_dir / rel_key)] = entry
         except Exception:
             # Corrupt manifest — start fresh
             self.files = {}
@@ -132,7 +184,16 @@ class SyncManifest:
     def save(self) -> None:
         """Atomically persist manifest to prevent file corruption on interrupts."""
         self.base_dir.mkdir(parents=True, exist_ok=True)
-        payload = {"files": {k: v.to_dict() for k, v in self.files.items()}}
+        # Store only relative path entries on disk to ensure full portability
+        # across directories and cloud storage locations.
+        saved_dict: dict[str, Any] = {}
+        for k, v in self.files.items():
+            if not Path(k).is_absolute():
+                d = v.to_dict()
+                d["local_path"] = k
+                saved_dict[k] = d
+
+        payload = {"files": saved_dict}
         tmp_path = self._path.with_name(f".{self._path.name}.tmp_{time.time_ns()}")
         try:
             tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -150,32 +211,42 @@ class SyncManifest:
                 return entry
         return None
 
-    def is_locally_edited(self, local_path: Path) -> bool:
+    def resolve_dest(self, entry: SyncedFile) -> Path:
+        """Resolve the destination path inside the current active course directory."""
+        rel = self._to_rel_key(entry.local_path, fallback_remote=entry.remote_path)
+        return self.base_dir / rel
+
+    def is_locally_edited(self, local_path: Path | str) -> bool:
         """Return True if the file exists and has been changed since last sync."""
-        key = str(local_path)
-        if key not in self.files:
+        rel_key = self._to_rel_key(local_path)
+        if rel_key not in self.files:
             return False
-        if not local_path.exists():
+        dest_file = self.base_dir / rel_key
+        if not dest_file.exists():
             return False
-        current_sha = _sha256(local_path)
-        return current_sha != self.files[key].sha256
+        current_sha = _sha256(dest_file)
+        return current_sha != self.files[rel_key].sha256
 
     def record(
         self,
         remote_id: str,
         remote_path: str,
-        local_path: Path,
+        local_path: Path | str,
         remote_modified: str | None = None,
     ) -> None:
-        key = str(local_path)
-        self.files[key] = SyncedFile(
-            remote_id=remote_id,
-            remote_path=remote_path,
-            local_path=key,
-            sha256=_sha256(local_path),
+        rel_key = self._to_rel_key(local_path, fallback_remote=remote_path)
+        abs_dest = self.base_dir / rel_key
+
+        entry = SyncedFile(
+            remote_id=str(remote_id),
+            remote_path=str(remote_path).replace("\\", "/"),
+            local_path=rel_key,
+            sha256=_sha256(abs_dest) if abs_dest.exists() else "",
             synced_at=datetime.now(UTC).isoformat(),
             remote_modified=remote_modified,
         )
+        self.files[rel_key] = entry
+        self.files[str(abs_dest)] = entry
 
 
 # ---------------------------------------------------------------------------
@@ -758,7 +829,7 @@ def sync_course_descriptions_and_links(
         if cfg.sync_descriptions and (desc_md or non_files):
             module_dir.mkdir(parents=True, exist_ok=True)
             readme_path = module_dir / "README.md"
-            rel_readme = readme_path.relative_to(course_dir)
+            rel_readme = safe_rel_path(readme_path, course_dir)
 
             md_lines = [f"# {title}"]
             if desc_md:
@@ -811,7 +882,7 @@ def sync_course_descriptions_and_links(
                 turl = _resolve_topic_url(course_id, t)
                 shortcut_name = f"{_sanitize_folder_name(ttitle)}.html"
                 shortcut_path = module_dir / shortcut_name
-                rel_shortcut = shortcut_path.relative_to(course_dir)
+                rel_shortcut = safe_rel_path(shortcut_path, course_dir)
 
                 shortcut_html = _generate_html_shortcut(ttitle, turl)
                 shortcut_bytes = shortcut_html.encode("utf-8")
@@ -885,13 +956,13 @@ def sync_course_all(
         # Smart incremental check: avoid downloading unchanged files
         existing_entry = manifest.get_by_remote_id(topic_id)
         if existing_entry:
-            dest_path = Path(existing_entry.local_path)
+            dest_path = manifest.resolve_dest(existing_entry)
             if dest_path.exists():
                 is_edited = manifest.is_locally_edited(dest_path)
 
                 # If remote_modified matches (or both are unset/identical), nothing changed
                 if existing_entry.remote_modified == item.remote_modified:
-                    rel_str = str(dest_path.relative_to(course_dir))
+                    rel_str = safe_rel_path(dest_path, course_dir)
                     if is_edited:
                         result.skipped_edited.append(rel_str)
                     else:
@@ -906,7 +977,7 @@ def sync_course_all(
                 ):
                     existing_entry.remote_modified = item.remote_modified
                     manifest_dirty = True
-                    result.skipped_exists.append(str(dest_path.relative_to(course_dir)))
+                    result.skipped_exists.append(safe_rel_path(dest_path, course_dir))
                     continue
 
         if on_progress:
@@ -930,30 +1001,30 @@ def sync_course_all(
 
                 filename = src.name
                 dest = target_folder / filename
-                relative = dest.relative_to(course_dir)
-                remote_path = str(relative)
+                relative_str = safe_rel_path(dest, course_dir)
+                remote_path = relative_str
 
                 locally_edited = dest.exists() and manifest.is_locally_edited(dest)
 
                 if locally_edited:
                     strategy = cfg.conflict_strategy
                     if strategy == ConflictStrategy.SKIP:
-                        result.skipped_edited.append(str(relative))
+                        result.skipped_edited.append(relative_str)
                         if on_progress:
-                            on_progress(f"  ↷ Kept local edit: {relative}")
+                            on_progress(f"  ↷ Kept local edit: {relative_str}")
                         continue
                     elif strategy == ConflictStrategy.DUPLICATE:
                         edited_dest = cfg.edited_path(dest)
                         shutil.move(str(dest), str(edited_dest))
-                        result.skipped_edited.append(str(relative))
+                        result.skipped_edited.append(relative_str)
                         if on_progress:
                             on_progress(
-                                f"  ✎ Stashed edit → {edited_dest.name} | updated {relative}"
+                                f"  ✎ Stashed edit → {edited_dest.name} | updated {relative_str}"
                             )
                     elif strategy == ConflictStrategy.OVERWRITE:
-                        result.skipped_edited.append(str(relative))
+                        result.skipped_edited.append(relative_str)
                         if on_progress:
-                            on_progress(f"  ⚠ Overwrote local edit: {relative}")
+                            on_progress(f"  ⚠ Overwrote local edit: {relative_str}")
 
                 _atomic_install_file(src, dest)
                 manifest.record(
@@ -963,9 +1034,9 @@ def sync_course_all(
                     remote_modified=item.remote_modified,
                 )
                 manifest_dirty = True
-                result.downloaded.append(str(relative))
+                result.downloaded.append(relative_str)
                 if on_progress and not locally_edited:
-                    on_progress(f"  ✓ {relative}")
+                    on_progress(f"  ✓ {relative_str}")
 
     if toc and (cfg.sync_descriptions or cfg.sync_links):
         desc_dirty = sync_course_descriptions_and_links(
