@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-10-04
+
+### Fixed
+- **Cloud Storage & OneDrive Filename Sanitization**: Fixed an issue where filenames with trailing whitespace or dots before the file extension (e.g. `V_Meter_2 .mp4`, `Inleiding 2026 - 2027 .pptx`) were written to disk as-is, causing OneDrive and SharePoint sync engines on macOS to enter an infinite retry/sync loop.
+- **Auto-Migration of Unsanitized Files**: The incremental sync engine now automatically detects previously downloaded files on disk with trailing spaces or illegal characters, renames them cleanly, and updates the `.ufora_sync_manifest.json` without requiring re-downloads or manual intervention.
+- **Folder & Shortcut Sanitization**: Enforced strict stripping of trailing periods, dashes, and spaces on course and module folders as well as HTML activity shortcuts to comply with Microsoft OneDrive restrictions.
+
 ## [0.2.6] - 2026-10-01
 
 ### Fixed

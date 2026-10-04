@@ -357,3 +357,26 @@ def test_ensure_authenticated_fails_when_renew_fails(monkeypatch, tmp_path: Path
     is_auth, msg = ensure_authenticated()
     assert is_auth is False
     assert msg == "Session expired"
+
+
+# ---------------------------------------------------------------------------
+# Sanitization & Migration Tests
+# ---------------------------------------------------------------------------
+
+
+def test_sanitize_filename_removes_trailing_spaces_and_dots():
+    from ufora_sync.sync import _sanitize_filename
+
+    assert _sanitize_filename("V_Meter_2 .mp4") == "V_Meter_2.mp4"
+    assert _sanitize_filename("Inleiding 2026 - 2027 .pptx") == "Inleiding 2026 - 2027.pptx"
+    assert _sanitize_filename("test..pdf") == "test.pdf"
+    assert _sanitize_filename("report . ") == "report"
+    assert _sanitize_filename("name:with?illegal*chars.docx") == "name-with-illegal-chars.docx"
+
+
+def test_sanitize_folder_name_strips_trailing_dots_and_spaces():
+    from ufora_sync.sync import _sanitize_folder_name
+
+    assert _sanitize_folder_name("Chapter 1. ") == "Chapter 1"
+    assert _sanitize_folder_name("Labo / 2026: ") == "Labo - 2026"
+    assert _sanitize_folder_name("... ") == "Unnamed Course"

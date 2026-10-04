@@ -263,9 +263,20 @@ def _sha256(path: Path) -> str:
 
 
 def _sanitize_folder_name(name: str) -> str:
-    """Sanitize course title for filesystem usage."""
-    cleaned = re.sub(r'[\\/*?:"<>|]', "-", name).strip()
+    """Sanitize course title or folder name for filesystem and cloud storage (OneDrive)."""
+    cleaned = re.sub(r'[\\/*?:"<>|]', "-", name).strip().rstrip(" .-")
     return cleaned or "Unnamed Course"
+
+
+def _sanitize_filename(name: str) -> str:
+    """Sanitize filename to prevent OneDrive / macOS sync errors (e.g. trailing spaces/dots)."""
+    cleaned = re.sub(r'[\\/*?:"<>|]', "-", name).strip()
+    p = Path(cleaned)
+    stem = p.stem.rstrip(" .")
+    suffix = p.suffix.rstrip(" .")
+    if not stem:
+        stem = "unnamed"
+    return f"{stem}{suffix}"
 
 
 def _clean_legacy_temp_dirs(directory: Path) -> None:
@@ -612,8 +623,10 @@ def sync_topics(
                 if not src.is_file():
                     continue
                 relative = src.relative_to(stage_dir)
-                dest = course_dir / relative
-                remote_path = str(relative)
+                clean_parts = [_sanitize_folder_name(p) for p in relative.parts[:-1]]
+                clean_name = _sanitize_filename(relative.name)
+                dest = course_dir.joinpath(*clean_parts, clean_name)
+                remote_path = safe_rel_path(dest, course_dir)
 
                 locally_edited = dest.exists() and manifest.is_locally_edited(dest)
 
@@ -880,7 +893,11 @@ def sync_course_descriptions_and_links(
                 ttitle = str(t.get("Title") or "Link")
                 tid = str(t.get("TopicId") or t.get("Id") or "")
                 turl = _resolve_topic_url(course_id, t)
-                shortcut_name = f"{_sanitize_folder_name(ttitle)}.html"
+                clean_link_title = _sanitize_filename(ttitle)
+                if not clean_link_title.lower().endswith(".html"):
+                    shortcut_name = f"{clean_link_title}.html"
+                else:
+                    shortcut_name = clean_link_title
                 shortcut_path = module_dir / shortcut_name
                 rel_shortcut = safe_rel_path(shortcut_path, course_dir)
 
@@ -957,6 +974,21 @@ def sync_course_all(
         existing_entry = manifest.get_by_remote_id(topic_id)
         if existing_entry:
             dest_path = manifest.resolve_dest(existing_entry)
+            clean_filename = _sanitize_filename(dest_path.name)
+            clean_dest_path = dest_path.with_name(clean_filename)
+            if dest_path.name != clean_filename:
+                if dest_path.exists() and not clean_dest_path.exists():
+                    dest_path.rename(clean_dest_path)
+                if clean_dest_path.exists():
+                    dest_path = clean_dest_path
+                    manifest.record(
+                        topic_id,
+                        safe_rel_path(dest_path, course_dir),
+                        dest_path,
+                        remote_modified=existing_entry.remote_modified,
+                    )
+                    manifest_dirty = True
+
             if dest_path.exists():
                 is_edited = manifest.is_locally_edited(dest_path)
 
@@ -999,7 +1031,7 @@ def sync_course_all(
                 if not src.is_file():
                     continue
 
-                filename = src.name
+                filename = _sanitize_filename(src.name)
                 dest = target_folder / filename
                 relative_str = safe_rel_path(dest, course_dir)
                 remote_path = relative_str
