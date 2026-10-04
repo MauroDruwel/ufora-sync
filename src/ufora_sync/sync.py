@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -295,20 +296,150 @@ def _sha256(path: Path) -> str:
 
 
 def _sanitize_folder_name(name: str) -> str:
-    """Sanitize course title or folder name for filesystem and cloud storage (OneDrive)."""
-    cleaned = re.sub(r'[\\/*?:"<>|]', "-", name).strip().rstrip(" .-")
-    return cleaned or "Unnamed Course"
+    """Sanitize course title or folder name for filesystem and cloud storage."""
+    cleaned = unicodedata.normalize("NFC", str(name))
+    cleaned = cleaned.replace("°", "")
+    # Replace illegal filesystem & SharePoint characters
+    cleaned = re.sub(r'[\\/*?:"<>|~#%&{}`^]', "-", cleaned)
+    # Standardize curly quotes, clean apostrophes in folder names (e.g. Video's -> Videos)
+    cleaned = cleaned.replace("’", "'").replace("‘", "'")
+    cleaned = cleaned.replace("'s", "s").replace("'", "")
+    # Strip leading and trailing hyphens, dots, spaces, underscores
+    cleaned = cleaned.strip(" .-_")
+    # Collapse multiple spaces and dashes
+    cleaned = re.sub(r" +", " ", cleaned)
+    cleaned = re.sub(r"-{2,}", "-", cleaned)
+    return cleaned or "Unnamed Folder"
 
 
 def _sanitize_filename(name: str) -> str:
-    """Sanitize filename to prevent OneDrive / macOS sync errors (e.g. trailing spaces/dots)."""
-    cleaned = re.sub(r'[\\/*?:"<>|]', "-", name).strip()
+    """Sanitize filename to prevent OneDrive / macOS sync errors."""
+    raw_str = str(name)
+    if raw_str.startswith("."):
+        return raw_str
+    cleaned = unicodedata.normalize("NFC", raw_str)
+    cleaned = cleaned.replace("°", "")
+    cleaned = re.sub(r'[\\/*?:"<>|~#%&{}`^]', "-", cleaned)
+    cleaned = cleaned.replace("’", "'").replace("‘", "'")
+    cleaned = cleaned.strip()
+
     p = Path(cleaned)
-    stem = p.stem.rstrip(" .")
-    suffix = p.suffix.rstrip(" .")
+    stem = p.stem
+    suffix = p.suffix
+
+    stem = re.sub(r"\s+\.", ".", stem).strip(" .-_")
+    suffix = suffix.rstrip(" .")
+    stem = re.sub(r" +", " ", stem)
+    stem = re.sub(r"-{2,}", "-", stem)
+
     if not stem:
         stem = "unnamed"
     return f"{stem}{suffix}"
+
+
+def _cleanup_empty_dirs(path: Path, stop_at: Path) -> None:
+    """Remove empty ancestor directories starting from path up to (but not including) stop_at."""
+    curr = path
+    while curr != stop_at and curr.exists() and curr.is_dir():
+        try:
+            children = list(curr.iterdir())
+            if not children:
+                curr.rmdir()
+                curr = curr.parent
+            elif all(c.name in (".DS_Store", "Thumbs.db", ".localized") for c in children):
+                for c in children:
+                    with contextlib.suppress(OSError):
+                        c.unlink(missing_ok=True)
+                curr.rmdir()
+                curr = curr.parent
+            else:
+                break
+        except OSError:
+            break
+
+
+def _migrate_course_manifest(course_dir: Path, manifest: SyncManifest) -> bool:
+    """Migrate any previously tracked files/folders on disk and in manifest to clean names."""
+    dirty = False
+
+    # 1. Migrate directories with unsanitized names (deepest first)
+    if course_dir.exists() and course_dir.is_dir():
+        try:
+            dirs = [d for d in course_dir.rglob("*") if d.is_dir()]
+            dirs.sort(key=lambda p: len(p.parts), reverse=True)
+            for d in dirs:
+                if not d.exists():
+                    continue
+                clean_dname = _sanitize_folder_name(d.name)
+                if clean_dname != d.name:
+                    target_d = d.parent / clean_dname
+                    old_rel_prefix = safe_rel_path(d, course_dir) + "/"
+                    new_rel_prefix = safe_rel_path(target_d, course_dir) + "/"
+                    if not target_d.exists():
+                        d.rename(target_d)
+                    else:
+                        for item in list(d.iterdir()):
+                            dest_item = target_d / item.name
+                            if not dest_item.exists():
+                                item.rename(dest_item)
+                        _cleanup_empty_dirs(d, course_dir)
+
+                    for k in list(manifest.files.keys()):
+                        if Path(k).is_absolute():
+                            continue
+                        entry = manifest.files.get(k)
+                        if entry and (
+                            entry.local_path == old_rel_prefix[:-1]
+                            or entry.local_path.startswith(old_rel_prefix)
+                        ):
+                            suffix = entry.local_path[len(old_rel_prefix) :]
+                            new_local = new_rel_prefix + suffix
+                            manifest.files.pop(k, None)
+                            manifest.files.pop(str(course_dir / entry.local_path), None)
+                            entry.local_path = new_local
+                            manifest.record(
+                                entry.remote_id,
+                                new_local,
+                                course_dir / new_local,
+                                remote_modified=entry.remote_modified,
+                            )
+                            dirty = True
+        except Exception:
+            pass
+
+    # 2. Migrate files with unsanitized filenames
+    old_keys = list(manifest.files.keys())
+    for k in old_keys:
+        if Path(k).is_absolute():
+            continue
+        entry = manifest.files.get(k)
+        if not entry:
+            continue
+        parts = Path(entry.local_path).parts
+        if not parts:
+            continue
+        clean_parts = [_sanitize_folder_name(p) for p in parts[:-1]]
+        clean_name = _sanitize_filename(parts[-1])
+        new_rel = str(Path(*clean_parts, clean_name)).replace("\\", "/")
+        if new_rel != entry.local_path:
+            old_dest = course_dir / entry.local_path
+            new_dest = course_dir / new_rel
+            if old_dest.exists() and not new_dest.exists():
+                new_dest.parent.mkdir(parents=True, exist_ok=True)
+                old_dest.rename(new_dest)
+                _cleanup_empty_dirs(old_dest.parent, course_dir)
+            if new_dest.exists() or not old_dest.exists():
+                manifest.files.pop(k, None)
+                manifest.files.pop(str(old_dest), None)
+                entry.local_path = new_rel
+                manifest.record(
+                    entry.remote_id,
+                    new_rel,
+                    new_dest,
+                    remote_modified=entry.remote_modified,
+                )
+                dirty = True
+    return dirty
 
 
 def _clean_legacy_temp_dirs(directory: Path) -> None:
@@ -937,8 +1068,18 @@ def sync_course_descriptions_and_links(
                 shortcut_bytes = shortcut_html.encode("utf-8")
                 shortcut_sha = hashlib.sha256(shortcut_bytes).hexdigest()
 
-                needs_write = True
                 existing = manifest.get_by_remote_id(f"link_{tid}")
+                if existing:
+                    old_shortcut_path = manifest.resolve_dest(existing)
+                    if old_shortcut_path != shortcut_path:
+                        if old_shortcut_path.exists() and not shortcut_path.exists():
+                            old_shortcut_path.rename(shortcut_path)
+                            _cleanup_empty_dirs(old_shortcut_path.parent, course_dir)
+                        if shortcut_path.exists() or not old_shortcut_path.exists():
+                            manifest.record(f"link_{tid}", str(rel_shortcut), shortcut_path)
+                            manifest_dirty = True
+
+                needs_write = True
                 if shortcut_path.exists() and existing and existing.sha256 == shortcut_sha:
                     needs_write = False
                     result.skipped_exists.append(str(rel_shortcut))
@@ -990,16 +1131,14 @@ def sync_course_all(
     manifest = SyncManifest(base_dir=course_dir)
     manifest.load()
 
-    manifest_dirty = False
+    manifest_dirty = _migrate_course_manifest(course_dir, manifest)
 
     for item in file_topics:
         topic_id = item.id
 
         # Target subfolder inside course
-        target_folder = course_dir
-        for subfolder in item.module_path:
-            clean_subfolder = _sanitize_folder_name(subfolder)
-            target_folder = target_folder / clean_subfolder
+        clean_subfolders = [_sanitize_folder_name(s) for s in item.module_path]
+        target_folder = course_dir.joinpath(*clean_subfolders)
         target_folder.mkdir(parents=True, exist_ok=True)
 
         # Smart incremental check: avoid downloading unchanged files
@@ -1007,12 +1146,14 @@ def sync_course_all(
         if existing_entry:
             dest_path = manifest.resolve_dest(existing_entry)
             clean_filename = _sanitize_filename(dest_path.name)
-            clean_dest_path = dest_path.with_name(clean_filename)
-            if dest_path.name != clean_filename:
-                if dest_path.exists() and not clean_dest_path.exists():
-                    dest_path.rename(clean_dest_path)
-                if clean_dest_path.exists():
-                    dest_path = clean_dest_path
+            expected_dest_path = target_folder / clean_filename
+            if dest_path != expected_dest_path:
+                if dest_path.exists() and not expected_dest_path.exists():
+                    expected_dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    dest_path.rename(expected_dest_path)
+                    _cleanup_empty_dirs(dest_path.parent, course_dir)
+                if expected_dest_path.exists():
+                    dest_path = expected_dest_path
                     manifest.record(
                         topic_id,
                         safe_rel_path(dest_path, course_dir),
@@ -1024,12 +1165,8 @@ def sync_course_all(
             if dest_path.exists():
                 # If remote_modified matches (or both are unset), nothing changed on remote
                 if existing_entry.remote_modified == item.remote_modified:
-                    is_edited = manifest.is_locally_edited(dest_path)
                     rel_str = safe_rel_path(dest_path, course_dir)
-                    if is_edited:
-                        result.skipped_edited.append(rel_str)
-                    else:
-                        result.skipped_exists.append(rel_str)
+                    result.skipped_exists.append(rel_str)
                     continue
 
                 is_edited = manifest.is_locally_edited(dest_path)

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-10-04
+
+### Fixed
+- **Comprehensive SharePoint & OneDrive Folder Sanitization**: Resolved critical sync looping caused by folders with leading hyphens (e.g. `- Kennisclips`, `- Lesopname`, `- Algemeenheden`), degree symbols (`°Verslaggeving`, `°Verslagen`), and apostrophes (`Video's`, `Video's uitgewerkte oefeningen`). Stripped leading/trailing hyphens, periods, spaces, underscores, and normalized Unicode across all folder names.
+- **Stem Trailing Dash Sanitization**: Fixed sync failures on files whose stems ended in hyphens before the extension (e.g. `Werkcollege 1-.html` -> `Werkcollege 1.html`).
+- **Deep Directory & User File Migration**: Implemented recursive bottom-up folder migration in `_migrate_course_manifest()`. Renames invalid folders on disk and moves all tracked files, subdirectories, and untracked user coursework (such as lab reports, notes, photos) cleanly into the sanitized paths while updating the manifest.
+- **macOS Finder `.DS_Store` Cleanup**: Enhanced empty directory cleanup to recursively remove macOS Finder `.DS_Store` metadata files so abandoned invalid folders are completely pruned rather than remaining on disk.
+- **Heavy I/O Sync Loop Elimination**: Optimized incremental sync checking to skip re-reading and SHA-256 hashing large local video files when remote modification timestamps are unchanged. This stops continuous 8+ GB background disk thrashing and prevents FSEvents storms that aborted OneDrive upload gates.
+
 ## [0.2.7] - 2026-10-04
 
 ### Fixed
