@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Cloud Storage & OneDrive Filename Sanitization**: Fixed an issue where filenames with trailing whitespace or dots before the file extension (e.g. `V_Meter_2 .mp4`, `Inleiding 2026 - 2027 .pptx`) were written to disk as-is, causing OneDrive and SharePoint sync engines on macOS to enter an infinite retry/sync loop.
+- **OneDrive "Free Up Space" & Files On-Demand Compatibility**: Prevented automatic cloud re-hydration when users use "Free Up Space" on macOS (`stat.SF_DATALESS`) or Windows. The syncer detects evicted cloud placeholders and never opens or re-reads them to hash, keeping files in the cloud until genuine remote changes occur.
 - **Auto-Migration of Unsanitized Files**: The incremental sync engine now automatically detects previously downloaded files on disk with trailing spaces or illegal characters, renames them cleanly, and updates the `.ufora_sync_manifest.json` without requiring re-downloads or manual intervention.
 - **Folder & Shortcut Sanitization**: Enforced strict stripping of trailing periods, dashes, and spaces on course and module folders as well as HTML activity shortcuts to comply with Microsoft OneDrive restrictions.
 

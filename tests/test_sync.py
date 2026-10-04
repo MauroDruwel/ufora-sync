@@ -380,3 +380,23 @@ def test_sanitize_folder_name_strips_trailing_dots_and_spaces():
     assert _sanitize_folder_name("Chapter 1. ") == "Chapter 1"
     assert _sanitize_folder_name("Labo / 2026: ") == "Labo - 2026"
     assert _sanitize_folder_name("... ") == "Unnamed Course"
+
+
+def test_dataless_placeholder_prevents_hydration(monkeypatch, tmp_path: Path):
+    from ufora_sync.sync import SyncManifest, _is_dataless_placeholder
+
+    f = tmp_path / "big_video.mp4"
+    _write(f, b"original-content")
+
+    manifest = SyncManifest(base_dir=tmp_path)
+    manifest.record("topic-video", "big_video.mp4", f)
+
+    # Mock file as dataless (e.g. OneDrive 'Free Up Space')
+    class FakeStat:
+        st_flags = 0x40000000  # SF_DATALESS
+
+    monkeypatch.setattr(Path, "stat", lambda self: FakeStat())
+    assert _is_dataless_placeholder(f) is True
+
+    # is_locally_edited must return False and NOT open or re-read the file
+    assert manifest.is_locally_edited(f) is False

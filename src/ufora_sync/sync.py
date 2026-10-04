@@ -8,6 +8,7 @@ import html
 import json
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -224,6 +225,10 @@ class SyncManifest:
         dest_file = self.base_dir / rel_key
         if not dest_file.exists():
             return False
+        # If the file is an evicted cloud placeholder, it cannot be locally edited
+        # and opening it would force macOS/OneDrive to re-download (hydrate) it.
+        if _is_dataless_placeholder(dest_file):
+            return False
         current_sha = _sha256(dest_file)
         return current_sha != self.files[rel_key].sha256
 
@@ -237,16 +242,43 @@ class SyncManifest:
         rel_key = self._to_rel_key(local_path, fallback_remote=remote_path)
         abs_dest = self.base_dir / rel_key
 
+        sha = ""
+        if abs_dest.exists() and not _is_dataless_placeholder(abs_dest):
+            sha = _sha256(abs_dest)
+        elif rel_key in self.files:
+            sha = self.files[rel_key].sha256
+
         entry = SyncedFile(
             remote_id=str(remote_id),
             remote_path=str(remote_path).replace("\\", "/"),
             local_path=rel_key,
-            sha256=_sha256(abs_dest) if abs_dest.exists() else "",
+            sha256=sha,
             synced_at=datetime.now(UTC).isoformat(),
             remote_modified=remote_modified,
         )
         self.files[rel_key] = entry
         self.files[str(abs_dest)] = entry
+
+
+def _is_dataless_placeholder(path: Path) -> bool:
+    """Return True if the file is an evicted cloud placeholder (e.g. OneDrive 'Free Up Space').
+
+    Prevents triggering unwanted on-demand cloud hydration (re-download)
+    when inspecting OneDrive / iCloud / Files On-Demand placeholders.
+    """
+    try:
+        st = path.stat()
+        # macOS / Darwin APFS dataless file flag (Files On-Demand / iCloud / OneDrive)
+        if hasattr(stat, "SF_DATALESS") and bool(st.st_flags & stat.SF_DATALESS):
+            return True
+        # Windows Files On-Demand (recall on open/data access or offline)
+        if hasattr(st, "st_file_attributes"):
+            attrs = st.st_file_attributes
+            if bool(attrs & (0x00400000 | 0x00040000 | 0x00001000)):
+                return True
+    except OSError:
+        pass
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -990,10 +1022,9 @@ def sync_course_all(
                     manifest_dirty = True
 
             if dest_path.exists():
-                is_edited = manifest.is_locally_edited(dest_path)
-
-                # If remote_modified matches (or both are unset/identical), nothing changed
+                # If remote_modified matches (or both are unset), nothing changed on remote
                 if existing_entry.remote_modified == item.remote_modified:
+                    is_edited = manifest.is_locally_edited(dest_path)
                     rel_str = safe_rel_path(dest_path, course_dir)
                     if is_edited:
                         result.skipped_edited.append(rel_str)
@@ -1001,6 +1032,7 @@ def sync_course_all(
                         result.skipped_exists.append(rel_str)
                     continue
 
+                is_edited = manifest.is_locally_edited(dest_path)
                 # Backfill remote_modified for files downloaded in previous versions
                 if (
                     not is_edited
