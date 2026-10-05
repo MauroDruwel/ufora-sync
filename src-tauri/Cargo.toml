@@ -1,0 +1,41 @@
+[package]
+name = "ufora-sync"
+version = "1.0.0"
+description = "Native background sync service and desktop companion for UGent Ufora"
+authors = ["Mauro Druwel"]
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "ufora_sync_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "ufora-sync"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-store = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+tokio = { version = "1", features = ["full"] }
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+env_logger = "0.11"
+dirs = "5"
+open = "5"
+anyhow = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+window-vibrancy = "0.6"
