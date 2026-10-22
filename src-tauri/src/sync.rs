@@ -3,7 +3,7 @@ use crate::config::{get_config_dir, AppConfig};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -20,12 +20,13 @@ pub struct SyncedFile {
     pub local_path: String,
     pub sha256: String,
     pub synced_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_modified: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SyncManifest {
-    pub files: HashMap<String, SyncedFile>,
+    pub files: BTreeMap<String, SyncedFile>,
 }
 
 impl SyncManifest {
@@ -39,13 +40,12 @@ impl SyncManifest {
             Ok(content) => {
                 #[derive(Deserialize)]
                 struct Raw {
-                    files: HashMap<String, SyncedFile>,
+                    files: BTreeMap<String, SyncedFile>,
                 }
                 match serde_json::from_str::<Raw>(&content) {
                     Ok(raw) => {
-                        let mut files = HashMap::new();
+                        let mut files = BTreeMap::new();
                         for (_k, mut entry) in raw.files {
-                            // Ensure relative key
                             let clean_k = normalize_rel_path(&entry.local_path);
                             entry.local_path = clean_k.clone();
                             files.insert(clean_k, entry);
@@ -163,6 +163,260 @@ pub fn append_log(msg: &str) {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CourseSyncStats {
+    pub downloaded: usize,
+    pub up_to_date: usize,
+    pub errors: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SyncSummary {
+    pub downloaded: usize,
+    pub up_to_date: usize,
+    pub errors: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExtractedTopic {
+    pub id: String,
+    pub title: String,
+    pub module_path: Vec<String>,
+    pub remote_modified: Option<String>,
+    pub url: Option<String>,
+}
+
+pub fn extract_file_topics(toc: &serde_json::Value) -> Vec<ExtractedTopic> {
+    let mut topics = Vec::new();
+    if let Some(modules) = toc.get("Modules").and_then(|v| v.as_array()) {
+        for m in modules {
+            walk_module(m, &[], &mut topics);
+        }
+    }
+    topics
+}
+
+fn walk_module(module: &serde_json::Value, path: &[String], topics: &mut Vec<ExtractedTopic>) {
+    let title = module
+        .get("Title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Module")
+        .to_string();
+    let mut current_path = path.to_vec();
+    current_path.push(title);
+
+    if let Some(top_list) = module.get("Topics").and_then(|v| v.as_array()) {
+        for t in top_list {
+            let is_file = t.get("TypeIdentifier").and_then(|v| v.as_str()) == Some("File")
+                || t.get("TopicType").and_then(|v| v.as_i64()) == Some(1);
+            if is_file {
+                let id = t
+                    .get("TopicId")
+                    .or_else(|| t.get("Id"))
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let topic_title = t
+                    .get("Title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Untitled")
+                    .to_string();
+                let remote_mod = t
+                    .get("LastModifiedDate")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let url = t
+                    .get("Url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                if !id.is_empty() {
+                    topics.push(ExtractedTopic {
+                        id,
+                        title: topic_title,
+                        module_path: current_path.clone(),
+                        remote_modified: remote_mod,
+                        url,
+                    });
+                }
+            }
+        }
+    }
+
+    if let Some(sub_modules) = module.get("Modules").and_then(|v| v.as_array()) {
+        for sub in sub_modules {
+            walk_module(sub, &current_path, topics);
+        }
+    }
+}
+
+pub fn build_subfolder_path(course_dir: &Path, module_path: &[String]) -> PathBuf {
+    let mut p = course_dir.to_path_buf();
+    for seg in module_path {
+        p.push(api::sanitize_folder_name(seg));
+    }
+    p
+}
+
+pub fn make_conflict_path(original: &Path, suffix: &str) -> PathBuf {
+    let stem = original.file_stem().unwrap_or_default().to_string_lossy();
+    let ext = original
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    let parent = original.parent().unwrap_or_else(|| Path::new("."));
+
+    let candidate = parent.join(format!("{stem}{suffix}{ext}"));
+    if !candidate.exists() {
+        return candidate;
+    }
+
+    for i in 1..100 {
+        let numbered = parent.join(format!("{stem}{suffix}_{i}{ext}"));
+        if !numbered.exists() {
+            return numbered;
+        }
+    }
+    candidate
+}
+
+/// Core reusable course sync function (shared between Tauri GUI and Headless CLI)
+pub async fn sync_course_files<F>(
+    course_id: &str,
+    course_name: &str,
+    course_folder_name: &str,
+    base_sync_dir: &Path,
+    token: &str,
+    conflict_strategy: &str,
+    duplicate_suffix: &str,
+    mut on_log: F,
+) -> Result<CourseSyncStats, String>
+where
+    F: FnMut(&str),
+{
+    let course_dir = base_sync_dir.join(course_folder_name);
+    fs::create_dir_all(&course_dir).map_err(|e| format!("Failed to create course directory: {e}"))?;
+
+    on_log(&format!("Scanning course: {course_name}"));
+    let mut manifest = SyncManifest::load(&course_dir);
+    let mut manifest_dirty = false;
+
+    let toc = match api::fetch_course_toc(token, course_id).await {
+        Ok(t) => t,
+        Err(e) => {
+            on_log(&format!("  ✗ Failed to fetch TOC for {course_name}: {e}"));
+            return Ok(CourseSyncStats {
+                downloaded: 0,
+                up_to_date: 0,
+                errors: 1,
+            });
+        }
+    };
+
+    let topics = extract_file_topics(&toc);
+    on_log(&format!("  Found {} downloadable material(s)", topics.len()));
+
+    let mut downloaded = 0;
+    let mut up_to_date = 0;
+    let mut errors = 0;
+
+    for topic in topics {
+        let target_dir = build_subfolder_path(&course_dir, &topic.module_path);
+        let _ = fs::create_dir_all(&target_dir);
+
+        // Fast incremental check if existing in manifest
+        if let Some(entry) = manifest.get_by_remote_id(&topic.id) {
+            let full_dest = course_dir.join(&entry.local_path);
+            if full_dest.exists() && entry.remote_modified == topic.remote_modified {
+                up_to_date += 1;
+                continue;
+            }
+        }
+
+        // Download topic file
+        match api::download_topic_file(token, course_id, &topic.id).await {
+            Ok(file_data) => {
+                let resolved_filename = api::resolve_topic_filename(
+                    file_data.filename.as_deref(),
+                    topic.url.as_deref(),
+                    &topic.title,
+                    &topic.id,
+                );
+
+                let dest_path = target_dir.join(&resolved_filename);
+                let rel_path = match dest_path.strip_prefix(&course_dir) {
+                    Ok(p) => normalize_rel_path(&p.to_string_lossy()),
+                    Err(_) => resolved_filename.clone(),
+                };
+
+                let sha = {
+                    let mut hasher = Sha256::new();
+                    hasher.update(&file_data.bytes);
+                    format!("{:x}", hasher.finalize())
+                };
+
+                // Conflict detection
+                if dest_path.exists() && manifest.is_locally_edited(&course_dir, &rel_path) {
+                    if conflict_strategy == "skip" {
+                        on_log(&format!("  ↷ Kept local edit: {rel_path}"));
+                        continue;
+                    } else if conflict_strategy == "duplicate" {
+                        let edited_path = make_conflict_path(&dest_path, duplicate_suffix);
+                        let _ = fs::rename(&dest_path, &edited_path);
+                        on_log(&format!(
+                            "  ✎ Preserved edit → {}",
+                            edited_path
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                        ));
+                    }
+                }
+
+                // Atomic write using a hidden temporary file
+                let tmp_file = dest_path.with_file_name(format!(
+                    ".{}.tmp_{}",
+                    dest_path.file_name().unwrap_or_default().to_string_lossy(),
+                    Utc::now().timestamp_nanos_opt().unwrap_or(0)
+                ));
+
+                match fs::write(&tmp_file, &file_data.bytes) {
+                    Ok(_) => {
+                        if let Err(e) = fs::rename(&tmp_file, &dest_path) {
+                            on_log(&format!("  ✗ Failed to save {rel_path}: {e}"));
+                            let _ = fs::remove_file(&tmp_file);
+                            errors += 1;
+                            continue;
+                        }
+                        manifest.record(&topic.id, &rel_path, &sha, topic.remote_modified);
+                        manifest_dirty = true;
+                        downloaded += 1;
+                        on_log(&format!("  ✓ {rel_path}"));
+                    }
+                    Err(e) => {
+                        on_log(&format!("  ✗ Write error for {rel_path}: {e}"));
+                        let _ = fs::remove_file(&tmp_file);
+                        errors += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                on_log(&format!("  ✗ Error downloading item {}: {e}", topic.id));
+                errors += 1;
+            }
+        }
+    }
+
+    if manifest_dirty {
+        let _ = manifest.save(&course_dir);
+    }
+
+    Ok(CourseSyncStats {
+        downloaded,
+        up_to_date,
+        errors,
+    })
+}
+
 pub struct SyncEngine {
     pub is_running: Arc<AtomicBool>,
     pub is_paused: Arc<AtomicBool>,
@@ -202,17 +456,8 @@ impl SyncEngine {
         let _ = self.app_handle.emit("sync-status", "syncing");
         self.log("Starting Ufora sync pass…");
 
-        let token_result = api::read_token();
-        let token = match token_result {
-            Ok(t) => {
-                if api::is_token_expired(&t) {
-                    self.log("⚠ Token expired. Please re-authenticate via Ufora.");
-                    self.is_running.store(false, Ordering::SeqCst);
-                    let _ = self.app_handle.emit("sync-status", "error");
-                    return Err("Session expired. Please log in again.".to_string());
-                }
-                t.token
-            }
+        let token = match api::ensure_authenticated(180.0) {
+            Ok(t) => t,
             Err(e) => {
                 self.log(&format!("✗ Auth error: {e}"));
                 self.is_running.store(false, Ordering::SeqCst);
@@ -232,7 +477,6 @@ impl SyncEngine {
             return Err(e.to_string());
         }
 
-        // Fetch courses
         let courses = match api::fetch_enrolled_courses(&token).await {
             Ok(c) => c,
             Err(e) => {
@@ -264,101 +508,21 @@ impl SyncEngine {
         let mut total_errors = 0;
 
         for course in active_courses {
-            let course_dir = base_sync_dir.join(&course.folder_name);
-            let _ = fs::create_dir_all(&course_dir);
+            let stats = sync_course_files(
+                &course.id,
+                &course.name,
+                &course.folder_name,
+                &base_sync_dir,
+                &token,
+                &cfg.conflict_strategy,
+                &cfg.duplicate_suffix,
+                |msg| self.log(msg),
+            )
+            .await?;
 
-            self.log(&format!("Scanning course: {}", course.name));
-            let mut manifest = SyncManifest::load(&course_dir);
-            let mut manifest_dirty = false;
-
-            let toc = match api::fetch_course_toc(&token, &course.id).await {
-                Ok(t) => t,
-                Err(e) => {
-                    self.log(&format!("  ✗ Failed to fetch TOC for {}: {e}", course.name));
-                    total_errors += 1;
-                    continue;
-                }
-            };
-
-            let topics = extract_file_topics(&toc);
-            self.log(&format!(
-                "  Found {} downloadable material(s)",
-                topics.len()
-            ));
-
-            for topic in topics {
-                let target_dir = build_subfolder_path(&course_dir, &topic.module_path);
-                let _ = fs::create_dir_all(&target_dir);
-
-                let clean_title = api::sanitize_filename(&topic.title);
-                let dest_path = target_dir.join(&clean_title);
-                let rel_path = match dest_path.strip_prefix(&course_dir) {
-                    Ok(p) => p.to_string_lossy().to_string(),
-                    Err(_) => clean_title.clone(),
-                };
-
-                let existing = manifest.get_by_remote_id(&topic.id);
-                if let Some(entry) = existing {
-                    let full_dest = course_dir.join(&entry.local_path);
-                    if full_dest.exists() && entry.remote_modified == topic.remote_modified {
-                        total_up_to_date += 1;
-                        continue;
-                    }
-                }
-
-                // Download topic file
-                match api::download_topic_file(&token, &course.id, &topic.id).await {
-                    Ok(bytes) => {
-                        let sha = {
-                            let mut hasher = Sha256::new();
-                            hasher.update(&bytes);
-                            format!("{:x}", hasher.finalize())
-                        };
-
-                        if dest_path.exists() && manifest.is_locally_edited(&course_dir, &rel_path)
-                        {
-                            if cfg.conflict_strategy == "skip" {
-                                self.log(&format!("  ↷ Kept local edit: {rel_path}"));
-                                continue;
-                            } else if cfg.conflict_strategy == "duplicate" {
-                                let edited_path =
-                                    make_conflict_path(&dest_path, &cfg.duplicate_suffix);
-                                let _ = fs::rename(&dest_path, &edited_path);
-                                self.log(&format!(
-                                    "  ✎ Preserved edit → {}",
-                                    edited_path
-                                        .file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                ));
-                            }
-                        }
-
-                        // Atomic write
-                        let tmp_file = dest_path.with_file_name(format!(
-                            ".{}.tmp_{}",
-                            dest_path.file_name().unwrap_or_default().to_string_lossy(),
-                            Utc::now().timestamp_nanos_opt().unwrap_or(0)
-                        ));
-                        if let Ok(mut f) = File::create(&tmp_file) {
-                            let _ = f.write_all(&bytes);
-                            let _ = fs::rename(&tmp_file, &dest_path);
-                            manifest.record(&topic.id, &rel_path, &sha, topic.remote_modified);
-                            manifest_dirty = true;
-                            total_downloaded += 1;
-                            self.log(&format!("  ✓ {rel_path}"));
-                        }
-                    }
-                    Err(e) => {
-                        self.log(&format!("  ✗ Error downloading item {}: {e}", topic.id));
-                        total_errors += 1;
-                    }
-                }
-            }
-
-            if manifest_dirty {
-                let _ = manifest.save(&course_dir);
-            }
+            total_downloaded += stats.downloaded;
+            total_up_to_date += stats.up_to_date;
+            total_errors += stats.errors;
         }
 
         self.is_running.store(false, Ordering::SeqCst);
@@ -379,108 +543,6 @@ impl SyncEngine {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SyncSummary {
-    pub downloaded: usize,
-    pub up_to_date: usize,
-    pub errors: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExtractedTopic {
-    pub id: String,
-    pub title: String,
-    pub module_path: Vec<String>,
-    pub remote_modified: Option<String>,
-}
-
-fn extract_file_topics(toc: &serde_json::Value) -> Vec<ExtractedTopic> {
-    let mut topics = Vec::new();
-    if let Some(modules) = toc.get("Modules").and_then(|v| v.as_array()) {
-        for m in modules {
-            walk_module(m, &[], &mut topics);
-        }
-    }
-    topics
-}
-
-fn walk_module(module: &serde_json::Value, path: &[String], topics: &mut Vec<ExtractedTopic>) {
-    let title = module
-        .get("Title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Module")
-        .to_string();
-    let mut current_path = path.to_vec();
-    current_path.push(title);
-
-    if let Some(top_list) = module.get("Topics").and_then(|v| v.as_array()) {
-        for t in top_list {
-            let is_file = t.get("TypeIdentifier").and_then(|v| v.as_str()) == Some("File")
-                || t.get("TopicType").and_then(|v| v.as_i64()) == Some(1);
-            if is_file {
-                let id = t
-                    .get("TopicId")
-                    .or_else(|| t.get("Id"))
-                    .map(|v| v.to_string())
-                    .unwrap_or_default();
-                let topic_title = t
-                    .get("Title")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Untitled")
-                    .to_string();
-                let remote_mod = t
-                    .get("LastModifiedDate")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                if !id.is_empty() {
-                    topics.push(ExtractedTopic {
-                        id,
-                        title: topic_title,
-                        module_path: current_path.clone(),
-                        remote_modified: remote_mod,
-                    });
-                }
-            }
-        }
-    }
-
-    if let Some(sub_modules) = module.get("Modules").and_then(|v| v.as_array()) {
-        for sub in sub_modules {
-            walk_module(sub, &current_path, topics);
-        }
-    }
-}
-
-fn build_subfolder_path(course_dir: &Path, module_path: &[String]) -> PathBuf {
-    let mut p = course_dir.to_path_buf();
-    for seg in module_path {
-        p.push(api::sanitize_folder_name(seg));
-    }
-    p
-}
-
-fn make_conflict_path(original: &Path, suffix: &str) -> PathBuf {
-    let stem = original.file_stem().unwrap_or_default().to_string_lossy();
-    let ext = original
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy()))
-        .unwrap_or_default();
-    let parent = original.parent().unwrap_or_else(|| Path::new("."));
-
-    let candidate = parent.join(format!("{stem}{suffix}{ext}"));
-    if !candidate.exists() {
-        return candidate;
-    }
-
-    for i in 1..100 {
-        let numbered = parent.join(format!("{stem}{suffix}_{i}{ext}"));
-        if !numbered.exists() {
-            return numbered;
-        }
-    }
-    candidate
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -491,23 +553,6 @@ mod tests {
         assert_eq!(normalize_rel_path(r"foo\bar\baz.pdf"), "foo/bar/baz.pdf");
         assert_eq!(normalize_rel_path("./foo/bar.pdf"), "foo/bar.pdf");
         assert_eq!(normalize_rel_path("/foo/bar.pdf"), "foo/bar.pdf");
-        assert_eq!(normalize_rel_path(r".\foo\bar.pdf"), "foo/bar.pdf");
-    }
-
-    #[test]
-    fn test_make_conflict_path_simple() {
-        let p = PathBuf::from("/some/path/document.pdf");
-        let conflict = make_conflict_path(&p, "_edited");
-        assert_eq!(conflict, PathBuf::from("/some/path/document_edited.pdf"));
-    }
-
-    #[test]
-    fn test_extract_file_topics_empty() {
-        let val = serde_json::json!({
-            "Modules": []
-        });
-        let topics = extract_file_topics(&val);
-        assert!(topics.is_empty());
     }
 
     #[test]
@@ -519,8 +564,9 @@ mod tests {
                     "Topics": [
                         {
                             "TopicId": 9991,
-                            "Title": "Les1.pdf",
+                            "Title": "Les1",
                             "TypeIdentifier": "File",
+                            "Url": "/content/enforced/123/Les1.pdf",
                             "LastModifiedDate": "2024-09-20T10:00:00.000Z"
                         },
                         {
@@ -548,7 +594,11 @@ mod tests {
         let topics = extract_file_topics(&val);
         assert_eq!(topics.len(), 2);
         assert_eq!(topics[0].id, "9991");
-        assert_eq!(topics[0].title, "Les1.pdf");
+        assert_eq!(topics[0].title, "Les1");
+        assert_eq!(
+            topics[0].url,
+            Some("/content/enforced/123/Les1.pdf".to_string())
+        );
         assert_eq!(topics[0].module_path, vec!["Hoofdstuk 1"]);
         assert_eq!(topics[1].id, "9993");
         assert_eq!(topics[1].title, "Oefening 1.pdf");
