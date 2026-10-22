@@ -478,7 +478,7 @@ def test_dataless_placeholder_prevents_hydration(monkeypatch, tmp_path: Path):
     class FakeStat:
         st_flags = 0x40000000  # SF_DATALESS
 
-    monkeypatch.setattr(Path, "stat", lambda self: FakeStat())
+    monkeypatch.setattr(Path, "stat", lambda self, *args, **kwargs: FakeStat())
     assert _is_dataless_placeholder(f) is True
 
     # is_locally_edited must return False and NOT open or re-read the file
