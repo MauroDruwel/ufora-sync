@@ -1,4 +1,5 @@
 use crate::api::{self, Course};
+use crate::auth;
 use crate::config::{self, AppConfig};
 use crate::sync::SyncEngine;
 use serde::{Deserialize, Serialize};
@@ -29,9 +30,9 @@ pub fn save_config(new_cfg: AppConfig, engine: State<'_, Arc<SyncEngine>>) -> Re
 
 #[tauri::command]
 pub fn get_auth_status() -> AuthStatus {
-    match api::read_token() {
+    match auth::read_token() {
         Ok(t) => {
-            if api::is_token_expired(&t) {
+            if auth::is_token_expired(&t) {
                 AuthStatus {
                     is_authenticated: false,
                     user_id: t.sub,
@@ -55,11 +56,8 @@ pub fn get_auth_status() -> AuthStatus {
 
 #[tauri::command]
 pub async fn list_courses() -> Result<Vec<Course>, String> {
-    let token = api::read_token()?;
-    if api::is_token_expired(&token) {
-        return Err("Session expired. Please log in again.".to_string());
-    }
-    api::fetch_enrolled_courses(&token.token).await
+    let token = auth::ensure_authenticated(180.0)?;
+    api::fetch_enrolled_courses(&token).await
 }
 
 #[tauri::command]

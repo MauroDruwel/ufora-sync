@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use ufora_sync_lib::{api, sync};
+use ufora_sync_lib::{api, auth, sync};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,23 +13,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--course-id" => {
-                if i + 1 < args.len() {
-                    course_id = Some(args[i + 1].clone());
-                    i += 1;
-                }
+            "--course-id" if i + 1 < args.len() => {
+                course_id = Some(args[i + 1].clone());
+                i += 1;
             }
-            "--dest-dir" => {
-                if i + 1 < args.len() {
-                    dest_dir = PathBuf::from(&args[i + 1]);
-                    i += 1;
-                }
+            "--dest-dir" if i + 1 < args.len() => {
+                dest_dir = PathBuf::from(&args[i + 1]);
+                i += 1;
             }
-            "--conflict" => {
-                if i + 1 < args.len() {
-                    conflict_strategy = args[i + 1].clone();
-                    i += 1;
-                }
+            "--conflict" if i + 1 < args.len() => {
+                conflict_strategy = args[i + 1].clone();
+                i += 1;
             }
             _ => {}
         }
@@ -37,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("Ensuring authentication...");
-    let token = api::ensure_authenticated(180.0)?;
+    let token = auth::ensure_authenticated(180.0)?;
     println!("Authenticated successfully.");
 
     println!("Fetching courses from Brightspace API...");
@@ -67,17 +61,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for c in target_courses {
         println!("\n--- Syncing Course: {} ({}) ---", c.name, c.id);
-        let stats = sync::sync_course_files(
-            &c.id,
-            &c.name,
-            &c.folder_name,
-            &dest_dir,
-            &token,
-            &conflict_strategy,
-            "_edited",
-            |msg| println!("{msg}"),
-        )
-        .await?;
+        let opts = sync::CourseSyncOptions {
+            course_id: &c.id,
+            course_name: &c.name,
+            course_folder_name: &c.folder_name,
+            base_sync_dir: &dest_dir,
+            token: &token,
+            conflict_strategy: &conflict_strategy,
+            duplicate_suffix: "_edited",
+        };
+
+        let stats = sync::sync_course_files(&opts, |msg| println!("{msg}")).await?;
 
         total_downloaded += stats.downloaded;
         total_up_to_date += stats.up_to_date;

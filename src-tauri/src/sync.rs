@@ -1,154 +1,17 @@
 use crate::api;
+use crate::auth;
 use crate::config::{get_config_dir, AppConfig};
+use crate::manifest::{self, SyncManifest};
+use crate::sanitize;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
-use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::fs::{self};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-
-const MANIFEST_FILENAME: &str = ".ufora_sync_manifest.json";
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncedFile {
-    pub remote_id: String,
-    pub remote_path: String,
-    pub local_path: String,
-    pub sha256: String,
-    pub synced_at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub remote_modified: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SyncManifest {
-    pub files: BTreeMap<String, SyncedFile>,
-}
-
-impl SyncManifest {
-    pub fn load(course_dir: &Path) -> Self {
-        let manifest_path = course_dir.join(MANIFEST_FILENAME);
-        if !manifest_path.exists() {
-            return Self::default();
-        }
-
-        match fs::read_to_string(&manifest_path) {
-            Ok(content) => {
-                #[derive(Deserialize)]
-                struct Raw {
-                    files: BTreeMap<String, SyncedFile>,
-                }
-                match serde_json::from_str::<Raw>(&content) {
-                    Ok(raw) => {
-                        let mut files = BTreeMap::new();
-                        for (_k, mut entry) in raw.files {
-                            let clean_k = normalize_rel_path(&entry.local_path);
-                            entry.local_path = clean_k.clone();
-                            files.insert(clean_k, entry);
-                        }
-                        Self { files }
-                    }
-                    Err(_) => Self::default(),
-                }
-            }
-            Err(_) => Self::default(),
-        }
-    }
-
-    pub fn save(&self, course_dir: &Path) -> Result<(), String> {
-        let manifest_path = course_dir.join(MANIFEST_FILENAME);
-        let tmp_path = course_dir.join(format!(
-            ".{MANIFEST_FILENAME}.tmp_{}",
-            Utc::now().timestamp_nanos_opt().unwrap_or(0)
-        ));
-        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        fs::write(&tmp_path, json).map_err(|e| e.to_string())?;
-        fs::rename(&tmp_path, &manifest_path).map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    pub fn get_by_remote_id(&self, remote_id: &str) -> Option<&SyncedFile> {
-        self.files.values().find(|f| f.remote_id == remote_id)
-    }
-
-    pub fn is_locally_edited(&self, course_dir: &Path, rel_path: &str) -> bool {
-        let clean_rel = normalize_rel_path(rel_path);
-        let Some(entry) = self.files.get(&clean_rel) else {
-            return false;
-        };
-        let full_path = course_dir.join(&clean_rel);
-        if !full_path.exists() {
-            return false;
-        }
-
-        if is_dataless_placeholder(&full_path) {
-            return false;
-        }
-
-        match calculate_sha256(&full_path) {
-            Ok(current_sha) => current_sha != entry.sha256,
-            Err(_) => false,
-        }
-    }
-
-    pub fn record(
-        &mut self,
-        remote_id: &str,
-        rel_path: &str,
-        sha: &str,
-        remote_modified: Option<String>,
-    ) {
-        let clean_rel = normalize_rel_path(rel_path);
-        self.files.insert(
-            clean_rel.clone(),
-            SyncedFile {
-                remote_id: remote_id.to_string(),
-                remote_path: clean_rel.clone(),
-                local_path: clean_rel,
-                sha256: sha.to_string(),
-                synced_at: Utc::now().to_rfc3339(),
-                remote_modified,
-            },
-        );
-    }
-}
-
-pub fn normalize_rel_path(p: &str) -> String {
-    let replaced = p.replace('\\', "/");
-    let stripped = replaced.strip_prefix("./").unwrap_or(&replaced);
-    stripped.trim_start_matches('/').to_string()
-}
-
-pub fn calculate_sha256(path: &Path) -> Result<String, std::io::Error> {
-    let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let n = file.read(&mut buffer)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buffer[..n]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
-pub fn is_dataless_placeholder(_path: &Path) -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        use std::os::darwin::fs::MetadataExt;
-        if let Ok(meta) = fs::metadata(_path) {
-            let flags = meta.st_flags();
-            // SF_DATALESS = 0x40000000 on Darwin
-            return (flags & 0x4000_0000) != 0;
-        }
-    }
-    false
-}
 
 pub fn append_log(msg: &str) {
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -252,58 +115,41 @@ fn walk_module(module: &serde_json::Value, path: &[String], topics: &mut Vec<Ext
 pub fn build_subfolder_path(course_dir: &Path, module_path: &[String]) -> PathBuf {
     let mut p = course_dir.to_path_buf();
     for seg in module_path {
-        p.push(api::sanitize_folder_name(seg));
+        p.push(sanitize::sanitize_folder_name(seg));
     }
     p
 }
 
-pub fn make_conflict_path(original: &Path, suffix: &str) -> PathBuf {
-    let stem = original.file_stem().unwrap_or_default().to_string_lossy();
-    let ext = original
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy()))
-        .unwrap_or_default();
-    let parent = original.parent().unwrap_or_else(|| Path::new("."));
-
-    let candidate = parent.join(format!("{stem}{suffix}{ext}"));
-    if !candidate.exists() {
-        return candidate;
-    }
-
-    for i in 1..100 {
-        let numbered = parent.join(format!("{stem}{suffix}_{i}{ext}"));
-        if !numbered.exists() {
-            return numbered;
-        }
-    }
-    candidate
+/// Parameters for syncing a single course (groups options cleanly to satisfy Clippy)
+pub struct CourseSyncOptions<'a> {
+    pub course_id: &'a str,
+    pub course_name: &'a str,
+    pub course_folder_name: &'a str,
+    pub base_sync_dir: &'a Path,
+    pub token: &'a str,
+    pub conflict_strategy: &'a str,
+    pub duplicate_suffix: &'a str,
 }
 
-/// Core reusable course sync function (shared between Tauri GUI and Headless CLI)
+/// Core reusable course sync function
 pub async fn sync_course_files<F>(
-    course_id: &str,
-    course_name: &str,
-    course_folder_name: &str,
-    base_sync_dir: &Path,
-    token: &str,
-    conflict_strategy: &str,
-    duplicate_suffix: &str,
+    opts: &CourseSyncOptions<'_>,
     mut on_log: F,
 ) -> Result<CourseSyncStats, String>
 where
     F: FnMut(&str),
 {
-    let course_dir = base_sync_dir.join(course_folder_name);
+    let course_dir = opts.base_sync_dir.join(opts.course_folder_name);
     fs::create_dir_all(&course_dir).map_err(|e| format!("Failed to create course directory: {e}"))?;
 
-    on_log(&format!("Scanning course: {course_name}"));
+    on_log(&format!("Scanning course: {}", opts.course_name));
     let mut manifest = SyncManifest::load(&course_dir);
     let mut manifest_dirty = false;
 
-    let toc = match api::fetch_course_toc(token, course_id).await {
+    let toc = match api::fetch_course_toc(opts.token, opts.course_id).await {
         Ok(t) => t,
         Err(e) => {
-            on_log(&format!("  ✗ Failed to fetch TOC for {course_name}: {e}"));
+            on_log(&format!("  ✗ Failed to fetch TOC for {}: {e}", opts.course_name));
             return Ok(CourseSyncStats {
                 downloaded: 0,
                 up_to_date: 0,
@@ -333,9 +179,9 @@ where
         }
 
         // Download topic file
-        match api::download_topic_file(token, course_id, &topic.id).await {
+        match api::download_topic_file(opts.token, opts.course_id, &topic.id).await {
             Ok(file_data) => {
-                let resolved_filename = api::resolve_topic_filename(
+                let resolved_filename = sanitize::resolve_topic_filename(
                     file_data.filename.as_deref(),
                     topic.url.as_deref(),
                     &topic.title,
@@ -344,7 +190,7 @@ where
 
                 let dest_path = target_dir.join(&resolved_filename);
                 let rel_path = match dest_path.strip_prefix(&course_dir) {
-                    Ok(p) => normalize_rel_path(&p.to_string_lossy()),
+                    Ok(p) => manifest::normalize_rel_path(&p.to_string_lossy()),
                     Err(_) => resolved_filename.clone(),
                 };
 
@@ -356,11 +202,11 @@ where
 
                 // Conflict detection
                 if dest_path.exists() && manifest.is_locally_edited(&course_dir, &rel_path) {
-                    if conflict_strategy == "skip" {
+                    if opts.conflict_strategy == "skip" {
                         on_log(&format!("  ↷ Kept local edit: {rel_path}"));
                         continue;
-                    } else if conflict_strategy == "duplicate" {
-                        let edited_path = make_conflict_path(&dest_path, duplicate_suffix);
+                    } else if opts.conflict_strategy == "duplicate" {
+                        let edited_path = manifest::make_conflict_path(&dest_path, opts.duplicate_suffix);
                         let _ = fs::rename(&dest_path, &edited_path);
                         on_log(&format!(
                             "  ✎ Preserved edit → {}",
@@ -456,7 +302,7 @@ impl SyncEngine {
         let _ = self.app_handle.emit("sync-status", "syncing");
         self.log("Starting Ufora sync pass…");
 
-        let token = match api::ensure_authenticated(180.0) {
+        let token = match auth::ensure_authenticated(180.0) {
             Ok(t) => t,
             Err(e) => {
                 self.log(&format!("✗ Auth error: {e}"));
@@ -508,17 +354,17 @@ impl SyncEngine {
         let mut total_errors = 0;
 
         for course in active_courses {
-            let stats = sync_course_files(
-                &course.id,
-                &course.name,
-                &course.folder_name,
-                &base_sync_dir,
-                &token,
-                &cfg.conflict_strategy,
-                &cfg.duplicate_suffix,
-                |msg| self.log(msg),
-            )
-            .await?;
+            let opts = CourseSyncOptions {
+                course_id: &course.id,
+                course_name: &course.name,
+                course_folder_name: &course.folder_name,
+                base_sync_dir: &base_sync_dir,
+                token: &token,
+                conflict_strategy: &cfg.conflict_strategy,
+                duplicate_suffix: &cfg.duplicate_suffix,
+            };
+
+            let stats = sync_course_files(&opts, |msg| self.log(msg)).await?;
 
             total_downloaded += stats.downloaded;
             total_up_to_date += stats.up_to_date;
@@ -546,14 +392,6 @@ impl SyncEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_normalize_rel_path() {
-        assert_eq!(normalize_rel_path("foo/bar/baz.pdf"), "foo/bar/baz.pdf");
-        assert_eq!(normalize_rel_path(r"foo\bar\baz.pdf"), "foo/bar/baz.pdf");
-        assert_eq!(normalize_rel_path("./foo/bar.pdf"), "foo/bar.pdf");
-        assert_eq!(normalize_rel_path("/foo/bar.pdf"), "foo/bar.pdf");
-    }
 
     #[test]
     fn test_extract_file_topics_nested() {
