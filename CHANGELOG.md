@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-10-06
+
+### Added
+- **Native Tauri v2 Desktop Companion**: Rewrote the entire desktop application with a high-performance **Rust** background sync engine and a modern **React + Vite + Tailwind CSS** user interface.
+- **System Tray & Menu Bar Integration**: Native status indicators (Idle, Syncing, Up to date, Needs Login) and context menu actions.
+- **Automated Cross-Platform GitHub Workflows**: Reusable Mauro Quality Gate CI (`tauri-ci.yml`) and multi-platform build & release workflows (`tauri-release.yml`).
+- **Autostart Plugin**: Integrated `tauri-plugin-autostart` for native login launch management.
+
+### Removed
+- **Legacy Python Engine & CustomTkinter GUI**: Fully purged old Python scripts, CustomTkinter views, pystray tray code, and python dependencies in favor of the unified Rust + Tauri v2 architecture.
+
 ## [0.2.8] - 2026-10-04
 
 ### Fixed
