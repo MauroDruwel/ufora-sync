@@ -39,10 +39,7 @@ pub fn is_token_expired(token: &D2lToken) -> bool {
 }
 
 pub fn find_ufora_exe() -> Option<PathBuf> {
-    if let Ok(path) = std::process::Command::new("which")
-        .arg("ufora")
-        .output()
-    {
+    if let Ok(path) = std::process::Command::new("which").arg("ufora").output() {
         if path.status.success() {
             let s = String::from_utf8_lossy(&path.stdout).trim().to_string();
             if !s.is_empty() {

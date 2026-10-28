@@ -75,7 +75,14 @@ pub async fn fetch_enrolled_courses(token: &str) -> Result<Vec<Course>, String> 
     let mut courses = Vec::new();
     for item in items {
         if let Some(org) = item.get("OrgUnit") {
-            let id = org.get("Id").map(|v| v.to_string()).unwrap_or_default();
+            let id = org
+                .get("Id")
+                .and_then(|v| {
+                    v.as_str()
+                        .map(|s| s.to_string())
+                        .or_else(|| v.as_i64().map(|n| n.to_string()))
+                })
+                .unwrap_or_default();
             let name = org
                 .get("Name")
                 .and_then(|v| v.as_str())

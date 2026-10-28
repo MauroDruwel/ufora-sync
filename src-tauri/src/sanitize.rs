@@ -2,18 +2,11 @@ use regex::Regex;
 use std::path::Path;
 use std::sync::LazyLock;
 
-static RE_ILLEGAL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"[\\/*?:"<>|~#%&{}`^]"#).expect("valid regex")
-});
-static RE_SPACES: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r" +").expect("valid regex")
-});
-static RE_DASHES: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"-{2,}").expect("valid regex")
-});
-static RE_SPACE_DOT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\s+\.").expect("valid regex")
-});
+static RE_ILLEGAL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"[\\/*?:"<>|~#%&{}`^]"#).expect("valid regex"));
+static RE_SPACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r" +").expect("valid regex"));
+static RE_DASHES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-{2,}").expect("valid regex"));
+static RE_SPACE_DOT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+\.").expect("valid regex"));
 static RE_CD_STAR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?i)filename\*\s*=\s*['"]?(?:UTF-8|utf-8)''([^"';]+)"#).expect("valid regex")
 });
@@ -54,7 +47,10 @@ pub fn sanitize_folder_name(name: &str) -> String {
 pub fn safe_filename_stage1(value: &str, fallback: &str) -> String {
     let raw = value.to_string();
     // Non-printable or control characters
-    if raw.chars().any(|c| (c as u32) < 32 || (127..160).contains(&(c as u32))) {
+    if raw
+        .chars()
+        .any(|c| (c as u32) < 32 || (127..160).contains(&(c as u32)))
+    {
         return fallback.to_string();
     }
 
@@ -97,8 +93,8 @@ pub fn safe_filename_stage1(value: &str, fallback: &str) -> String {
 
     let stem_upper = stem.to_ascii_uppercase();
     let reserved = [
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
-        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
     if reserved.contains(&stem_upper.as_str()) {
         return fallback.to_string();
@@ -121,10 +117,7 @@ pub fn sanitize_filename_stage2(name: &str) -> String {
 
     let mut cleaned = raw_str.replace('°', "");
     cleaned = RE_ILLEGAL.replace_all(&cleaned, "-").to_string();
-    cleaned = cleaned
-        .replace(['’', '‘'], "'")
-        .trim()
-        .to_string();
+    cleaned = cleaned.replace(['’', '‘'], "'").trim().to_string();
 
     let p = Path::new(&cleaned);
     let stem_raw = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");

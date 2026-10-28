@@ -76,7 +76,11 @@ fn walk_module(module: &serde_json::Value, path: &[String], topics: &mut Vec<Ext
                 let id = t
                     .get("TopicId")
                     .or_else(|| t.get("Id"))
-                    .map(|v| v.to_string())
+                    .and_then(|v| {
+                        v.as_str()
+                            .map(|s| s.to_string())
+                            .or_else(|| v.as_i64().map(|n| n.to_string()))
+                    })
                     .unwrap_or_default();
                 let topic_title = t
                     .get("Title")
@@ -87,10 +91,7 @@ fn walk_module(module: &serde_json::Value, path: &[String], topics: &mut Vec<Ext
                     .get("LastModifiedDate")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                let url = t
-                    .get("Url")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+                let url = t.get("Url").and_then(|v| v.as_str()).map(|s| s.to_string());
 
                 if !id.is_empty() {
                     topics.push(ExtractedTopic {
@@ -140,7 +141,8 @@ where
     F: FnMut(&str),
 {
     let course_dir = opts.base_sync_dir.join(opts.course_folder_name);
-    fs::create_dir_all(&course_dir).map_err(|e| format!("Failed to create course directory: {e}"))?;
+    fs::create_dir_all(&course_dir)
+        .map_err(|e| format!("Failed to create course directory: {e}"))?;
 
     on_log(&format!("Scanning course: {}", opts.course_name));
     let mut manifest = SyncManifest::load(&course_dir);
@@ -149,7 +151,10 @@ where
     let toc = match api::fetch_course_toc(opts.token, opts.course_id).await {
         Ok(t) => t,
         Err(e) => {
-            on_log(&format!("  ✗ Failed to fetch TOC for {}: {e}", opts.course_name));
+            on_log(&format!(
+                "  ✗ Failed to fetch TOC for {}: {e}",
+                opts.course_name
+            ));
             return Ok(CourseSyncStats {
                 downloaded: 0,
                 up_to_date: 0,
@@ -159,7 +164,10 @@ where
     };
 
     let topics = extract_file_topics(&toc);
-    on_log(&format!("  Found {} downloadable material(s)", topics.len()));
+    on_log(&format!(
+        "  Found {} downloadable material(s)",
+        topics.len()
+    ));
 
     let mut downloaded = 0;
     let mut up_to_date = 0;
@@ -200,16 +208,39 @@ where
                     format!("{:x}", hasher.finalize())
                 };
 
-                // Conflict detection
-                if dest_path.exists() && manifest.is_locally_edited(&course_dir, &rel_path) {
+                // Safety & conflict detection: ensure NO local files are ever lost or blindly overwritten
+                if dest_path.exists() {
+                    let is_placeholder = manifest::is_dataless_placeholder(&dest_path);
+                    let local_sha = if is_placeholder {
+                        manifest
+                            .get_by_remote_id(&topic.id)
+                            .map(|e| e.sha256.clone())
+                    } else {
+                        manifest::calculate_sha256(&dest_path).ok()
+                    };
+
+                    if let Some(ref l_sha) = local_sha {
+                        if l_sha == &sha {
+                            manifest.record(&topic.id, &rel_path, &sha, topic.remote_modified);
+                            manifest_dirty = true;
+                            up_to_date += 1;
+                            continue;
+                        }
+                    }
+
+                    // Content differs: protect local edits or existing version
                     if opts.conflict_strategy == "skip" {
-                        on_log(&format!("  ↷ Kept local edit: {rel_path}"));
+                        on_log(&format!("  ↷ Kept local file: {rel_path}"));
                         continue;
-                    } else if opts.conflict_strategy == "duplicate" {
-                        let edited_path = manifest::make_conflict_path(&dest_path, opts.duplicate_suffix);
+                    } else if opts.conflict_strategy == "overwrite" {
+                        on_log(&format!("  ⚠ Overwrote local file: {rel_path}"));
+                    } else {
+                        // Default safe strategy: duplicate (preserves local file with suffix)
+                        let edited_path =
+                            manifest::make_conflict_path(&dest_path, opts.duplicate_suffix);
                         let _ = fs::rename(&dest_path, &edited_path);
                         on_log(&format!(
-                            "  ✎ Preserved edit → {}",
+                            "  ✎ Preserved existing file → {}",
                             edited_path
                                 .file_name()
                                 .unwrap_or_default()
