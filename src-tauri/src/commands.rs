@@ -55,6 +55,11 @@ pub fn get_auth_status() -> AuthStatus {
 }
 
 #[tauri::command]
+pub fn open_login(app: tauri::AppHandle) -> Result<(), String> {
+    auth::open_login_window(&app)
+}
+
+#[tauri::command]
 pub async fn list_courses() -> Result<Vec<Course>, String> {
     let token = auth::ensure_authenticated(180.0)?;
     api::fetch_enrolled_courses(&token).await

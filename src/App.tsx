@@ -6,7 +6,7 @@ import { Header } from "./components/Header";
 import { CourseCard } from "./components/CourseCard";
 import { ActivityLog } from "./components/ActivityLog";
 import { SettingsModal } from "./components/SettingsModal";
-import { BookOpen, CheckSquare, Square, RefreshCcw } from "lucide-react";
+import { BookOpen, CheckSquare, Square, RefreshCcw, LogIn } from "lucide-react";
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -66,12 +66,38 @@ export default function App() {
       setSyncStatus("idle");
     });
 
+    const unlistenAuth = listen<boolean>("auth-status-changed", async (_event) => {
+      try {
+        const loadedAuth: AuthStatus = await invoke("get_auth_status");
+        setAuthStatus(loadedAuth);
+        if (loadedAuth.is_authenticated) {
+          setIsLoadingCourses(true);
+          const loadedCourses: Course[] = await invoke("list_courses");
+          setCourses(loadedCourses);
+          await invoke("sync_now");
+        }
+      } catch (err) {
+        console.error("Failed to update auth status:", err);
+      } finally {
+        setIsLoadingCourses(false);
+      }
+    });
+
     return () => {
       unlistenLog.then((f) => f());
       unlistenStatus.then((f) => f());
       unlistenComplete.then((f) => f());
+      unlistenAuth.then((f) => f());
     };
   }, []);
+
+  const handleOpenLogin = async () => {
+    try {
+      await invoke("open_login");
+    } catch (err) {
+      console.error("Failed to open login window:", err);
+    }
+  };
 
   const handleToggleCourse = async (courseId: string, enabled: boolean) => {
     if (!config) return;
@@ -146,7 +172,9 @@ export default function App() {
       {/* Top Header */}
       <Header
         status={syncStatus}
+        isAuthenticated={authStatus.is_authenticated}
         onSyncNow={handleSyncNow}
+        onLogin={handleOpenLogin}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenSyncFolder={handleOpenSyncFolder}
         onOpenUforaWeb={() => handleOpenUrl("https://ufora.ugent.be")}
@@ -217,13 +245,34 @@ export default function App() {
                 <span className="text-xs">Fetching enrolled courses from UGent Ufora…</span>
               </div>
             ) : courses.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 space-y-2 text-slate-400">
-                <BookOpen className="w-8 h-8 text-slate-600" />
-                <span className="text-sm font-medium text-slate-300">No courses loaded</span>
-                <span className="text-xs text-slate-500">
-                  Make sure you are logged into Ufora and have active enrollments.
-                </span>
-              </div>
+              !authStatus.is_authenticated ? (
+                <div className="flex flex-col items-center justify-center h-64 space-y-4 text-slate-300">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg shadow-amber-500/10">
+                    <LogIn className="w-6 h-6" />
+                  </div>
+                  <div className="text-center space-y-1">
+                    <h3 className="font-semibold text-sm text-slate-100">Authentication Required</h3>
+                    <p className="text-xs text-slate-400 max-w-sm">
+                      {authStatus.message || "Your session is expired or not signed in."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleOpenLogin}
+                    className="flex items-center space-x-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded-lg text-xs transition shadow-md shadow-amber-500/20 active:scale-95"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span>Log in with UGent Ufora</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-64 space-y-2 text-slate-400">
+                  <BookOpen className="w-8 h-8 text-slate-600" />
+                  <span className="text-sm font-medium text-slate-300">No courses loaded</span>
+                  <span className="text-xs text-slate-500">
+                    Make sure you have active course enrollments on Ufora.
+                  </span>
+                </div>
+              )
             ) : (
               courses.map((course) => (
                 <CourseCard
@@ -254,6 +303,7 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
+        onLogin={handleOpenLogin}
       />
     </div>
   );

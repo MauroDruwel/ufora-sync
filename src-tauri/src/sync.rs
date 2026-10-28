@@ -336,6 +336,7 @@ impl SyncEngine {
         let token = match auth::ensure_authenticated(180.0) {
             Ok(t) => t,
             Err(e) => {
+                let _ = auth::trigger_silent_refresh(&self.app_handle);
                 self.log(&format!("✗ Auth error: {e}"));
                 self.is_running.store(false, Ordering::SeqCst);
                 let _ = self.app_handle.emit("sync-status", "error");

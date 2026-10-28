@@ -44,6 +44,9 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             "open_ufora" => {
                 let _ = open::that("https://ufora.ugent.be");
             }
+            "open_login" => {
+                let _ = crate::auth::open_login_window(app);
+            }
             "quit" => app.exit(0),
             _ => {}
         });
@@ -74,6 +77,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         true,
         None::<&str>,
     )?;
+    let login_item = MenuItem::with_id(
+        app,
+        "open_login",
+        "🔑 Log in to UGent Ufora…",
+        true,
+        None::<&str>,
+    )?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let settings_item =
         MenuItem::with_id(app, "show", "⚙️ Settings & Courses…", true, None::<&str>)?;
@@ -86,6 +96,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &status_item,
             &sep1,
             &sync_item,
+            &login_item,
             &open_folder,
             &open_ufora,
             &sep2,

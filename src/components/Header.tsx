@@ -1,8 +1,10 @@
-import { Cloud, RefreshCw, Settings, Folder, ExternalLink } from "lucide-react";
+import { Cloud, RefreshCw, Settings, Folder, ExternalLink, LogIn } from "lucide-react";
 
 interface HeaderProps {
   status: "idle" | "syncing" | "paused" | "error";
+  isAuthenticated?: boolean;
   onSyncNow: () => void;
+  onLogin?: () => void;
   onOpenSettings: () => void;
   onOpenSyncFolder: () => void;
   onOpenUforaWeb: () => void;
@@ -10,7 +12,9 @@ interface HeaderProps {
 
 export const Header = ({
   status,
+  isAuthenticated = true,
   onSyncNow,
+  onLogin,
   onOpenSettings,
   onOpenSyncFolder,
   onOpenUforaWeb,
@@ -50,6 +54,17 @@ export const Header = ({
       </div>
 
       <div className="flex items-center space-x-2">
+        {!isAuthenticated && onLogin && (
+          <button
+            onClick={onLogin}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20 active:scale-95 transition"
+            title="Log in to UGent Ufora via native WebKit window"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Log in with UGent</span>
+          </button>
+        )}
+
         <button
           onClick={onSyncNow}
           disabled={isSyncing}

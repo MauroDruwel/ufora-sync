@@ -10,6 +10,7 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (newConfig: AppConfig) => Promise<void>;
+  onLogin?: () => void;
 }
 
 export const SettingsModal = ({
@@ -18,6 +19,7 @@ export const SettingsModal = ({
   isOpen,
   onClose,
   onSave,
+  onLogin,
 }: SettingsModalProps) => {
   const [syncDir, setSyncDir] = useState(config.sync_dir);
   const [interval, setInterval] = useState(config.interval_minutes);
@@ -118,15 +120,26 @@ export const SettingsModal = ({
                 </p>
               </div>
             </div>
-            <span
-              className={`text-[10px] uppercase font-mono px-2 py-0.5 rounded font-semibold ${
-                authStatus.is_authenticated
-                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
-                  : "bg-rose-500/10 text-rose-400 border border-rose-500/30"
-              }`}
-            >
-              {authStatus.is_authenticated ? "Connected" : "Disconnected"}
-            </span>
+            <div className="flex items-center space-x-2">
+              <span
+                className={`text-[10px] uppercase font-mono px-2 py-0.5 rounded font-semibold ${
+                  authStatus.is_authenticated
+                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+                    : "bg-rose-500/10 text-rose-400 border border-rose-500/30"
+                }`}
+              >
+                {authStatus.is_authenticated ? "Connected" : "Disconnected"}
+              </span>
+              {!authStatus.is_authenticated && onLogin && (
+                <button
+                  type="button"
+                  onClick={onLogin}
+                  className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded text-[11px] transition shadow-sm active:scale-95"
+                >
+                  Log In
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Sync Folder */}
