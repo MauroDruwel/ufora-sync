@@ -3,11 +3,8 @@
 @tailwind utilities;
 
 @layer base {
-  * {
-    border-color: rgba(255, 255, 255, 0.08);
-  }
   body {
-    @apply bg-[#131314] text-[#e3e3e3] font-sans;
+    @apply bg-[#ffffff] dark:bg-[#131314] text-[#1f1f1f] dark:text-[#e3e3e3] font-sans;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -22,9 +19,15 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #282a2c;
+  background: #c4c7c5;
   border-radius: 9999px;
 }
+.dark ::-webkit-scrollbar-thumb {
+  background: #282a2c;
+}
 ::-webkit-scrollbar-thumb:hover {
+  background: #8e918f;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
   background: #37393b;
 }

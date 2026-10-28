@@ -142,6 +142,15 @@ pub fn is_dataless_placeholder(_path: &Path) -> bool {
             return (flags & 0x4000_0000) != 0;
         }
     }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if let Ok(meta) = fs::metadata(_path) {
+            let attrs = meta.file_attributes();
+            // FILE_ATTRIBUTE_REPARSE_POINT (0x400) or RECALL_ON_DATA_ACCESS (0x400000)
+            return (attrs & 0x0040_0400) != 0;
+        }
+    }
     false
 }
 

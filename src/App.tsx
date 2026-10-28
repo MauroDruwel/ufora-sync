@@ -21,6 +21,24 @@ export default function App() {
   const [isLoadingCourses, setIsLoadingCourses] = useState(true);
   const [activeTab, setActiveTab] = useState<"courses" | "logs">("courses");
 
+  // Dynamic OS Dark/Light theme sync
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia) {
+      const media = window.matchMedia("(prefers-color-scheme: dark)");
+      const updateTheme = (matches: boolean) => {
+        if (matches) {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      };
+      updateTheme(media.matches);
+      const handler = (e: MediaQueryListEvent) => updateTheme(e.matches);
+      media.addEventListener("change", handler);
+      return () => media.removeEventListener("change", handler);
+    }
+  }, []);
+
   // Load initial data
   useEffect(() => {
     async function init() {
@@ -165,7 +183,7 @@ export default function App() {
 
   if (!config) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#131314] text-[#8e918f] font-sans text-xs">
+      <div className="flex h-screen items-center justify-center bg-[#ffffff] dark:bg-[#131314] text-[#747775] dark:text-[#8e918f] font-sans text-xs">
         Loading Ufora Sync…
       </div>
     );
@@ -174,8 +192,8 @@ export default function App() {
   const enabledCount = courses.filter((c) => config.enabled_courses.includes(c.id)).length;
 
   return (
-    <div className="flex flex-col h-screen bg-[#131314] text-[#e3e3e3] font-sans select-none overflow-hidden">
-      {/* Top Header */}
+    <div className="flex flex-col h-screen bg-[#ffffff] dark:bg-[#131314] text-[#1f1f1f] dark:text-[#e3e3e3] font-sans select-none overflow-hidden transition-colors duration-150">
+      {/* Top Header with traffic light safe area */}
       <Header
         status={syncStatus}
         isAuthenticated={authStatus.is_authenticated}
@@ -187,14 +205,14 @@ export default function App() {
       />
 
       {/* Tabs & Controls */}
-      <div className="flex items-center justify-between px-6 py-2.5 border-b border-white/[0.08] bg-[#131314]">
+      <div className="flex items-center justify-between px-6 py-2.5 border-b border-black/[0.08] dark:border-white/[0.08] bg-[#ffffff] dark:bg-[#131314] transition-colors duration-150">
         <div className="flex items-center space-x-1.5">
           <button
             onClick={() => setActiveTab("courses")}
             className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
               activeTab === "courses"
-                ? "bg-[#282a2c] text-[#e3e3e3]"
-                : "text-[#8e918f] hover:text-[#c4c7c5] hover:bg-[#1e1f20]"
+                ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
+                : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
             }`}
           >
             Courses ({courses.length})
@@ -203,34 +221,35 @@ export default function App() {
             onClick={() => setActiveTab("logs")}
             className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] flex items-center space-x-2 ${
               activeTab === "logs"
-                ? "bg-[#282a2c] text-[#e3e3e3]"
-                : "text-[#8e918f] hover:text-[#c4c7c5] hover:bg-[#1e1f20]"
+                ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
+                : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
             }`}
           >
             <span>Activity Log</span>
             {syncStatus === "syncing" && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[#a8c7fa] animate-ping" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#1a73e8] dark:bg-[#a8c7fa] animate-ping" />
             )}
           </button>
         </div>
 
         {activeTab === "courses" && (
-          <div className="flex items-center space-x-3 text-xs text-[#8e918f]">
+          <div className="flex items-center space-x-3 text-xs text-[#747775] dark:text-[#8e918f]">
             <span>
-              <strong className="text-[#c4c7c5] font-medium">{enabledCount}</strong> of {courses.length} active
+              <strong className="text-[#1f1f1f] dark:text-[#c4c7c5] font-medium">{enabledCount}</strong> of{" "}
+              {courses.length} active
             </span>
-            <div className="flex items-center space-x-1.5 border-l border-white/[0.08] pl-3">
+            <div className="flex items-center space-x-1.5 border-l border-black/[0.08] dark:border-white/[0.08] pl-3">
               <button
                 onClick={() => handleSelectAll(true)}
-                className="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[#1e1f20] hover:bg-[#282a2c] text-[#c4c7c5] hover:text-[#e3e3e3] border border-white/[0.06] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[#f0f4f9] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] border border-black/[0.06] dark:border-white/[0.06] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
                 title="Enable all courses"
               >
-                <CheckSquare className="w-3.5 h-3.5 text-[#a8c7fa]" />
+                <CheckSquare className="w-3.5 h-3.5 text-[#1a73e8] dark:text-[#a8c7fa]" />
                 <span>All</span>
               </button>
               <button
                 onClick={() => handleSelectAll(false)}
-                className="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[#1e1f20] hover:bg-[#282a2c] text-[#c4c7c5] hover:text-[#e3e3e3] border border-white/[0.06] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[#f0f4f9] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] border border-black/[0.06] dark:border-white/[0.06] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
                 title="Disable all courses"
               >
                 <Square className="w-3.5 h-3.5" />
@@ -246,36 +265,40 @@ export default function App() {
         {activeTab === "courses" ? (
           <div className="h-full overflow-y-auto space-y-2.5 pr-1">
             {isLoadingCourses ? (
-              <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#8e918f]">
-                <RefreshCcw className="w-5 h-5 animate-spin text-[#a8c7fa]" />
+              <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#747775] dark:text-[#8e918f]">
+                <RefreshCcw className="w-5 h-5 animate-spin text-[#1a73e8] dark:text-[#a8c7fa]" />
                 <span className="text-xs">Fetching enrolled courses from UGent Ufora…</span>
               </div>
             ) : courses.length === 0 ? (
               !authStatus.is_authenticated ? (
-                <div className="flex flex-col items-center justify-center h-80 space-y-4 text-center max-w-sm mx-auto p-6 rounded-3xl bg-[#1e1f20] border border-white/[0.08]">
-                  <div className="w-12 h-12 rounded-full bg-[#282a2c] flex items-center justify-center text-[#a8c7fa]">
+                <div className="flex flex-col items-center justify-center h-80 space-y-4 text-center max-w-sm mx-auto p-6 rounded-3xl bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08]">
+                  <div className="w-12 h-12 rounded-full bg-[#ffffff] dark:bg-[#282a2c] flex items-center justify-center text-[#1a73e8] dark:text-[#a8c7fa] shadow-sm">
                     <LogIn className="w-5 h-5" />
                   </div>
                   <div className="space-y-1">
-                    <h3 className="font-medium text-sm text-[#e3e3e3]">Authentication Required</h3>
-                    <p className="text-xs text-[#8e918f] leading-relaxed">
+                    <h3 className="font-medium text-sm text-[#1f1f1f] dark:text-[#e3e3e3]">
+                      Authentication Required
+                    </h3>
+                    <p className="text-xs text-[#747775] dark:text-[#8e918f] leading-relaxed">
                       {authStatus.message || "Sign in with your UGent account to fetch and sync course materials."}
                     </p>
                   </div>
                   <button
                     onClick={handleOpenLogin}
-                    className="flex items-center space-x-2 px-5 py-2.5 bg-[#a8c7fa] hover:bg-[#c2e7ff] text-[#062e6f] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.98]"
+                    className="flex items-center space-x-2 px-5 py-2.5 bg-[#1a73e8] dark:bg-[#a8c7fa] hover:bg-[#1765cc] dark:hover:bg-[#c2e7ff] text-[#ffffff] dark:text-[#062e6f] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.98]"
                   >
                     <LogIn className="w-4 h-4" />
                     <span>Log in with UGent Ufora</span>
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#8e918f] max-w-sm mx-auto p-6 rounded-3xl bg-[#1e1f20] border border-white/[0.08] text-center">
-                  <BookOpen className="w-6 h-6 text-[#8e918f]" />
+                <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#747775] dark:text-[#8e918f] max-w-sm mx-auto p-6 rounded-3xl bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-center">
+                  <BookOpen className="w-6 h-6 text-[#747775] dark:text-[#8e918f]" />
                   <div className="space-y-1">
-                    <span className="text-sm font-medium text-[#e3e3e3] block">No courses found</span>
-                    <span className="text-xs text-[#8e918f] block">
+                    <span className="text-sm font-medium text-[#1f1f1f] dark:text-[#e3e3e3] block">
+                      No courses found
+                    </span>
+                    <span className="text-xs text-[#747775] dark:text-[#8e918f] block">
                       Make sure you have active course enrollments on Ufora.
                     </span>
                   </div>

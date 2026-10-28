@@ -8,95 +8,86 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Author: Mauro Druwel](https://img.shields.io/badge/Author-Mauro%20Druwel-orange)](https://maurodruwel.be)
 
-> **OneDrive-style background sync service and system tray application for UGent Ufora (Brightspace).**  
+> **OneDrive-style background sync service and native desktop companion for UGent Ufora (Brightspace).**  
 > Automatically downloads course files, handouts, and slides to your PC. If you edit local files, your version is preserved while still fetching the professor's updates.
 
 > [!NOTE]
 > **Disclaimer:** Ufora Sync is an independent, student-built open-source project and is **not affiliated with, maintained by, or endorsed by Ghent University (UGent) or D2L (Brightspace)**. Ufora and Brightspace are trademarks of their respective owners and are referenced solely to describe service compatibility.
 
-Built for **macOS**, **Linux**, and **Windows**.
+Built with **Tauri v2 + Rust** for **macOS** (Apple Silicon & Intel), **Windows x64**, and **Linux x64**.
 
 ---
 
 ## ⚡ Highlights
 
-- ☁️ **OneDrive-like Sync Daemon**: Runs silently in the background and continuously synchronizes your enrolled courses.
-- 🔄 **Automatic Silent Token Renewal**: Headlessly renews expiring Brightspace tokens in the background via saved SSO cookies — no more hourly login interruptions.
-- 🖥️ **System Tray / Menu Bar Icon**: Live status indicators (Idle, Syncing, Up-to-date, Needs Login) with quick right-click actions.
-- 📁 **Preserved Module Structure**: Preserves exact course folder hierarchies (e.g. `Statica / Lessen / H1_Statica.pdf`) instead of flat lists.
-- 📝 **Module & Folder Descriptions**: Converts professor announcements and folder descriptions into local `README.md` files in each subfolder.
-- 🔗 **Online Activities & Quicklinks**: Generates lightweight `.html` shortcut redirect files (quizzes, Wooclap, dropboxes, external links) that open straight in your browser on double-click.
-- 🚀 **Fast Incremental Sync**: Checks remote Brightspace `LastModifiedDate` timestamps to skip unchanged files instantly without downloading them.
-- 🛡️ **Zero Stray Temp Files**: Downloads are staged safely in OS temporary storage and installed atomically. Cut-off or interrupted sync passes never leave messy `_tmp` folders in your course directories.
-- 🔒 **Process-Level Concurrency Lock**: Cross-process file locking ensures tray, GUI, and background sync never collide or duplicate operations.
-- 💾 **Non-Destructive Local Edits**:
-  - `duplicate` *(default)*: Stashes your edited copy as `<filename>_edited.<ext>` and downloads the professor's fresh version to the original path.
-  - `skip`: Keeps your local modifications and skips downloading updates for those specific files.
-  - `overwrite`: Replaces local files unconditionally.
-- 🎓 **Course Selection Hub**: Clean dark CustomTkinter GUI to toggle courses, configure intervals, and open local course folders with one click.
-- 🔑 **Local & Private**: No third-party servers. Your session stays on your machine (`~/.d2l`).
-- 🏛️ **Mauro Quality Gate (MQG) Verified**: 100% compliance with MQG standards (Pillars 1–6).
+- 🦀 **Pure Native Rust Core**: Built from scratch with Tauri v2 and Rust. Uses under 15 MB RAM and 0% idle CPU — zero Python runtime, node, or heavy dependencies required.
+- 🎨 **Google Gemini Design System**: Clean, utility-first user interface adhering to Google Gemini specifications:
+  - Automatic OS Dark / Light theme detection (`prefers-color-scheme`) with seamless dynamic switching.
+  - True neutral backgrounds (`#131314` dark / `#ffffff` light), flat surface layering, and restrained Google Material blue accents (`#a8c7fa` / `#1a73e8`).
+  - Native window dragging region with seamless macOS traffic light clearance.
+- 🔐 **Native Single Sign-On (SSO)**: Built-in WebKit / WebView2 login modal with automatic session cookie extraction and persistence to `~/.d2l/token.json`. No external CLIs or browser extensions required.
+- ☁️ **OneDrive & Cloud Storage Aware**:
+  - Detects macOS APFS `SF_DATALESS` and Windows NTFS reparse point placeholders (`RECALL_ON_DATA_ACCESS`).
+  - Never forces cloud re-hydration during SHA-256 integrity checks when using OneDrive "Free Up Space".
+- 🛡️ **Guaranteed Non-Destructive File Safety**:
+  - `duplicate` *(default)*: Stashes your local modifications as `<filename>_edited.<ext>` and fetches the professor's updated handout to the original path.
+  - `skip`: Preserves your local modifications and leaves them untouched.
+  - `overwrite`: Replaces local files when remote revisions are released.
+  - User-created files, personal notes, and untracked coursework are **never deleted**.
+- 📁 **Preserved Module Structure**: Keeps exact course hierarchies (e.g. `Statica / Lessen / H1_Statica.pdf`) instead of flat lists.
+- 📝 **Module & Folder Descriptions**: Converts professor announcements and folder descriptions into local `README.md` files.
+- 🔗 **Online Activities & Quicklinks**: Generates lightweight `.html` shortcut redirect files for quizzes, Wooclap, dropboxes, and external links.
+- 🚀 **Fast Incremental Sync**: Checks remote Brightspace `LastModifiedDate` timestamps to skip unchanged files instantly without redundant network transfers.
+- 🖥️ **System Tray & Background Sync**: Runs silently in your menu bar or system tray with live status indicators and real-time activity logs.
+- 🏛️ **Mauro Quality Gate (MQG) Verified**: 100% compliance with MQG standards (Pillars 1–6) utilizing centralized reusable CI/CD pipelines.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Installation & Downloads
 
-### 1. Requirements
-- Python 3.11+
-- Chromium browser (Google Chrome, Chromium, Brave, or Edge for SSO login)
+Pre-built binaries for macOS, Windows, and Linux are available directly on the **[Releases](https://github.com/MauroDruwel/ufora-sync/releases)** page:
 
-### 2. Installation
+- **macOS**: `.dmg` (Universal binary for Apple Silicon M1-M4 and Intel x86_64)
+- **Windows**: `.msi` / `.exe` installer (x64)
+- **Linux**: `.AppImage` / `.deb` (x64)
+
+---
+
+## 💻 Building from Source
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v20+ or v22 LTS recommended)
+- [pnpm](https://pnpm.io/) (v10+)
+- [Rust & Cargo](https://rustup.rs/) (v1.75+)
+- Platform-specific build tools:
+  - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
+  - **Windows**: Visual Studio 2022 C++ Build Tools & WebView2
+  - **Linux**: `libwebkit2gtk-4.1-dev`, `build-essential`, `curl`, `wget`, `file`, `libssl-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`
+
+### Development
 ```bash
 git clone https://github.com/MauroDruwel/ufora-sync.git
 cd ufora-sync
 
-# Install with pip
-pip3 install -e .
+# Install frontend dependencies
+pnpm install
+
+# Run desktop app in development mode
+pnpm tauri dev
 ```
 
-### 3. Log into UGent
+### Production Build
 ```bash
-ufora login
-```
-A browser window will open — sign into UGent SSO as you normally do. Your token will be securely saved under `~/.d2l/token.json`.
+# Lint & typecheck
+pnpm run lint
+pnpm run typecheck
 
----
+# Run test suites
+pnpm test
+cargo test --manifest-path src-tauri/Cargo.toml
 
-## 💻 Usage
-
-### Default (Menu Bar / Tray + Auto Sync)
-```bash
-ufora-sync
-```
-Launches the system tray app and starts the background sync service. If it's your first run, the settings window will open automatically so you can pick which courses to sync.
-
-### Open Settings & Course Selection Window
-```bash
-ufora-sync gui
-```
-
-### Run as Headless Daemon (e.g. systemd or background script)
-```bash
-ufora-sync service
-```
-
-### Instant One-Shot Sync
-```bash
-ufora-sync sync
-```
-
-### Auto-Start on System Login
-Enable or manage launching Ufora Sync in the background whenever you log into your computer:
-```bash
-ufora-sync autostart enable   # Register LaunchAgent (macOS) / desktop entry (Linux) / registry (Windows)
-ufora-sync autostart disable  # Unregister startup task
-ufora-sync autostart status   # Check current autostart status
-```
-*(You can also toggle this with a single click inside the Settings GUI!)*
-
-### Check Version
-```bash
-ufora-sync --version
+# Build native desktop bundle
+pnpm tauri build
 ```
 
 ---
@@ -111,7 +102,7 @@ Configuration is stored in standard OS user application data directories:
 Example `config.json`:
 ```json
 {
-  "sync_dir": "/Users/student/Documents/Ufora",
+  "sync_dir": "/Users/student/Library/CloudStorage/OneDrive-UGent/Ufora",
   "interval_minutes": 30,
   "enabled_courses": [
     "1377778",
@@ -127,12 +118,13 @@ Example `config.json`:
 
 ---
 
-## 🧪 Testing
+## 🏛️ Mauro Quality Gate (MQG)
 
-```bash
-python3 -m pytest tests/ -v
-python3 -m ruff check .
-```
+This project strictly adheres to the **[Mauro Quality Gate](https://github.com/MauroDruwel/quality-gate)** standards:
+
+- **Strict Type Safety**: Strict TypeScript (`noImplicitAny: true`) and zero-warning Rust (`cargo clippy --all-targets -- -D warnings`).
+- **Automated Verification**: Comprehensive unit tests covering incremental synchronization, conflict resolution, and token persistence.
+- **Centralized Reusable Workflows**: CI/CD runs on every push and pull request via `MauroDruwel/quality-gate/.github/workflows/tauri-ci.yml`.
 
 ---
 
