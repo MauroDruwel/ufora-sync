@@ -1,4 +1,4 @@
-import { Cloud, RefreshCw, Settings, Folder, ExternalLink, LogIn } from "lucide-react";
+import { Sparkles, RefreshCw, Settings, Folder, ExternalLink, LogIn } from "lucide-react";
 
 interface HeaderProps {
   status: "idle" | "syncing" | "paused" | "error";
@@ -22,32 +22,38 @@ export const Header = ({
   const isSyncing = status === "syncing";
 
   return (
-    <header className="h-16 border-b border-slate-800/80 bg-[#0f172a]/95 backdrop-blur px-6 flex items-center justify-between select-none">
-      <div className="flex items-center space-x-3">
-        <div className="w-9 h-9 rounded-xl bg-ugent-blue/20 border border-ugent-blue/40 flex items-center justify-center text-ugent-blue shadow-lg shadow-ugent-blue/10">
-          <Cloud className="w-5 h-5 fill-ugent-blue/20" />
+    <header className="h-16 border-b border-white/[0.08] bg-[#131314] px-6 flex items-center justify-between select-none">
+      <div className="flex items-center space-x-3.5">
+        <div className="w-9 h-9 rounded-full bg-[#1e1f20] border border-white/[0.08] flex items-center justify-center text-[#a8c7fa]">
+          <Sparkles className="w-4 h-4" />
         </div>
         <div>
           <div className="flex items-center space-x-2">
-            <h1 className="font-semibold text-base text-slate-100 tracking-tight">Ufora Sync</h1>
-            <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-ugent-blue/15 text-ugent-blue border border-ugent-blue/30 font-semibold">
-              Tauri v2
+            <h1 className="font-medium text-[15px] text-[#e3e3e3] tracking-normal">Ufora Sync</h1>
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[#1e1f20] text-[#c4c7c5] border border-white/[0.08]">
+              v1.0
             </span>
           </div>
-          <div className="flex items-center space-x-1.5 text-xs text-slate-400">
+          <div className="flex items-center space-x-1.5 text-xs text-[#8e918f]">
             <span
               className={`w-2 h-2 rounded-full ${
                 isSyncing
-                  ? "bg-blue-400 animate-pulse"
+                  ? "bg-[#a8c7fa] animate-pulse"
                   : status === "paused"
-                  ? "bg-amber-400"
+                  ? "bg-[#ffb74d]"
                   : status === "error"
-                  ? "bg-rose-400"
-                  : "bg-emerald-400"
+                  ? "bg-[#f28b82]"
+                  : "bg-[#6dd58c]"
               }`}
             />
-            <span className="capitalize">
-              {isSyncing ? "Syncing materials…" : status === "paused" ? "Sync paused" : status === "error" ? "Error" : "Up to date"}
+            <span>
+              {isSyncing
+                ? "Syncing materials…"
+                : status === "paused"
+                ? "Sync paused"
+                : status === "error"
+                ? "Sync error"
+                : "Up to date"}
             </span>
           </div>
         </div>
@@ -57,8 +63,8 @@ export const Header = ({
         {!isAuthenticated && onLogin && (
           <button
             onClick={onLogin}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20 active:scale-95 transition"
-            title="Log in to UGent Ufora via native WebKit window"
+            className="flex items-center space-x-1.5 px-4 py-1.5 rounded-full text-xs font-medium bg-[#a8c7fa] hover:bg-[#c2e7ff] text-[#062e6f] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.98]"
+            title="Log in to UGent Ufora"
           >
             <LogIn className="w-3.5 h-3.5" />
             <span>Log in with UGent</span>
@@ -68,29 +74,28 @@ export const Header = ({
         <button
           onClick={onSyncNow}
           disabled={isSyncing}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+          className={`flex items-center space-x-1.5 px-4 py-1.5 rounded-full text-xs font-medium border border-white/[0.08] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.98] ${
             isSyncing
-              ? "bg-slate-800 text-slate-500 cursor-not-allowed"
-              : "bg-ugent-blue hover:bg-blue-600 text-white shadow-md shadow-blue-500/20 active:scale-95"
+              ? "bg-[#1e1f20] text-[#8e918f] cursor-not-allowed"
+              : "bg-[#1e1f20] hover:bg-[#282a2c] text-[#e3e3e3]"
           }`}
           title="Trigger immediate sync pass"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin text-[#a8c7fa]" : "text-[#c4c7c5]"}`} />
           <span>{isSyncing ? "Syncing…" : "Sync Now"}</span>
         </button>
 
         <button
           onClick={onOpenSyncFolder}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 transition active:scale-95"
+          className="w-9 h-9 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] text-[#c4c7c5] hover:text-[#e3e3e3] border border-white/[0.08] flex items-center justify-center transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
           title="Open root sync folder in file manager"
         >
-          <Folder className="w-3.5 h-3.5" />
-          <span>Folder</span>
+          <Folder className="w-4 h-4" />
         </button>
 
         <button
           onClick={onOpenUforaWeb}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/40 transition active:scale-95"
+          className="w-9 h-9 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] text-[#c4c7c5] hover:text-[#e3e3e3] border border-white/[0.08] flex items-center justify-center transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
           title="Open UGent Ufora in browser"
         >
           <ExternalLink className="w-4 h-4" />
@@ -98,7 +103,7 @@ export const Header = ({
 
         <button
           onClick={onOpenSettings}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/40 transition active:scale-95"
+          className="w-9 h-9 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] text-[#c4c7c5] hover:text-[#e3e3e3] border border-white/[0.08] flex items-center justify-center transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
           title="Open Settings"
         >
           <Settings className="w-4 h-4" />

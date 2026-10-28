@@ -3,13 +3,17 @@
 @tailwind utilities;
 
 @layer base {
+  * {
+    border-color: rgba(255, 255, 255, 0.08);
+  }
   body {
-    @apply bg-[#0b1120] text-slate-100 font-sans;
+    @apply bg-[#131314] text-[#e3e3e3] font-sans;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-/* Custom sleek dark scrollbar */
+/* Google Gemini sleek scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -18,9 +22,9 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #282a2c;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #37393b;
 }

@@ -91,14 +91,6 @@ export default function App() {
     };
   }, []);
 
-  const handleOpenLogin = async () => {
-    try {
-      await invoke("open_login");
-    } catch (err) {
-      console.error("Failed to open login window:", err);
-    }
-  };
-
   const handleToggleCourse = async (courseId: string, enabled: boolean) => {
     if (!config) return;
     const set = new Set(config.enabled_courses);
@@ -114,33 +106,39 @@ export default function App() {
 
   const handleSelectAll = async (enable: boolean) => {
     if (!config) return;
-    const newEnabled = enable ? courses.map((c) => c.id) : [];
-    const updated = { ...config, enabled_courses: newEnabled };
+    const updated = {
+      ...config,
+      enabled_courses: enable ? courses.map((c) => c.id) : [],
+    };
     setConfig(updated);
     await invoke("save_config", { newCfg: updated });
+  };
+
+  const handleSaveSettings = async (newCfg: AppConfig) => {
+    setConfig(newCfg);
+    await invoke("save_config", { newCfg });
   };
 
   const handleSyncNow = async () => {
     try {
       await invoke("sync_now");
     } catch (err) {
-      console.error("Failed to trigger sync:", err);
+      console.error("Failed to sync now:", err);
     }
   };
 
   const handleTogglePause = async () => {
-    if (syncStatus === "paused") {
-      await invoke("resume_sync");
-      setSyncStatus("idle");
-    } else {
-      await invoke("pause_sync");
-      setSyncStatus("paused");
+    try {
+      if (syncStatus === "paused") {
+        await invoke("resume_sync");
+        setSyncStatus("idle");
+      } else {
+        await invoke("pause_sync");
+        setSyncStatus("paused");
+      }
+    } catch (err) {
+      console.error("Failed to toggle pause:", err);
     }
-  };
-
-  const handleSaveSettings = async (newConfig: AppConfig) => {
-    setConfig(newConfig);
-    await invoke("save_config", { newCfg: newConfig });
   };
 
   const handleOpenSyncFolder = async () => {
@@ -157,9 +155,17 @@ export default function App() {
     await invoke("open_url", { url });
   };
 
+  const handleOpenLogin = async () => {
+    try {
+      await invoke("open_login");
+    } catch (err) {
+      console.error("Failed to open login window:", err);
+    }
+  };
+
   if (!config) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#0b1120] text-slate-400 font-mono text-sm">
+      <div className="flex h-screen items-center justify-center bg-[#131314] text-[#8e918f] font-sans text-xs">
         Loading Ufora Sync…
       </div>
     );
@@ -168,7 +174,7 @@ export default function App() {
   const enabledCount = courses.filter((c) => config.enabled_courses.includes(c.id)).length;
 
   return (
-    <div className="flex flex-col h-screen bg-[#0b1120] text-slate-100 select-none overflow-hidden">
+    <div className="flex flex-col h-screen bg-[#131314] text-[#e3e3e3] font-sans select-none overflow-hidden">
       {/* Top Header */}
       <Header
         status={syncStatus}
@@ -180,51 +186,51 @@ export default function App() {
         onOpenUforaWeb={() => handleOpenUrl("https://ufora.ugent.be")}
       />
 
-      {/* Tabs */}
-      <div className="flex items-center justify-between px-6 pt-3 pb-2 border-b border-slate-800/60 bg-[#0d1424]">
-        <div className="flex items-center space-x-2">
+      {/* Tabs & Controls */}
+      <div className="flex items-center justify-between px-6 py-2.5 border-b border-white/[0.08] bg-[#131314]">
+        <div className="flex items-center space-x-1.5">
           <button
             onClick={() => setActiveTab("courses")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
               activeTab === "courses"
-                ? "bg-ugent-blue text-white shadow-sm"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                ? "bg-[#282a2c] text-[#e3e3e3]"
+                : "text-[#8e918f] hover:text-[#c4c7c5] hover:bg-[#1e1f20]"
             }`}
           >
             Courses ({courses.length})
           </button>
           <button
             onClick={() => setActiveTab("logs")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center space-x-1.5 ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] flex items-center space-x-2 ${
               activeTab === "logs"
-                ? "bg-ugent-blue text-white shadow-sm"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                ? "bg-[#282a2c] text-[#e3e3e3]"
+                : "text-[#8e918f] hover:text-[#c4c7c5] hover:bg-[#1e1f20]"
             }`}
           >
             <span>Activity Log</span>
             {syncStatus === "syncing" && (
-              <span className="w-2 h-2 rounded-full bg-blue-300 animate-ping" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#a8c7fa] animate-ping" />
             )}
           </button>
         </div>
 
         {activeTab === "courses" && (
-          <div className="flex items-center space-x-3 text-xs text-slate-400">
+          <div className="flex items-center space-x-3 text-xs text-[#8e918f]">
             <span>
-              <strong className="text-slate-200">{enabledCount}</strong> of {courses.length} active
+              <strong className="text-[#c4c7c5] font-medium">{enabledCount}</strong> of {courses.length} active
             </span>
-            <div className="flex items-center space-x-1 border-l border-slate-700/60 pl-3">
+            <div className="flex items-center space-x-1.5 border-l border-white/[0.08] pl-3">
               <button
                 onClick={() => handleSelectAll(true)}
-                className="flex items-center space-x-1 hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-800 transition"
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[#1e1f20] hover:bg-[#282a2c] text-[#c4c7c5] hover:text-[#e3e3e3] border border-white/[0.06] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
                 title="Enable all courses"
               >
-                <CheckSquare className="w-3.5 h-3.5 text-ugent-blue" />
+                <CheckSquare className="w-3.5 h-3.5 text-[#a8c7fa]" />
                 <span>All</span>
               </button>
               <button
                 onClick={() => handleSelectAll(false)}
-                className="flex items-center space-x-1 hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-800 transition"
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[#1e1f20] hover:bg-[#282a2c] text-[#c4c7c5] hover:text-[#e3e3e3] border border-white/[0.06] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
                 title="Disable all courses"
               >
                 <Square className="w-3.5 h-3.5" />
@@ -238,39 +244,41 @@ export default function App() {
       {/* Main Body */}
       <main className="flex-1 overflow-hidden p-6">
         {activeTab === "courses" ? (
-          <div className="h-full overflow-y-auto space-y-2 pr-1">
+          <div className="h-full overflow-y-auto space-y-2.5 pr-1">
             {isLoadingCourses ? (
-              <div className="flex flex-col items-center justify-center h-64 space-y-3 text-slate-400">
-                <RefreshCcw className="w-6 h-6 animate-spin text-ugent-blue" />
+              <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#8e918f]">
+                <RefreshCcw className="w-5 h-5 animate-spin text-[#a8c7fa]" />
                 <span className="text-xs">Fetching enrolled courses from UGent Ufora…</span>
               </div>
             ) : courses.length === 0 ? (
               !authStatus.is_authenticated ? (
-                <div className="flex flex-col items-center justify-center h-64 space-y-4 text-slate-300">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg shadow-amber-500/10">
-                    <LogIn className="w-6 h-6" />
+                <div className="flex flex-col items-center justify-center h-80 space-y-4 text-center max-w-sm mx-auto p-6 rounded-3xl bg-[#1e1f20] border border-white/[0.08]">
+                  <div className="w-12 h-12 rounded-full bg-[#282a2c] flex items-center justify-center text-[#a8c7fa]">
+                    <LogIn className="w-5 h-5" />
                   </div>
-                  <div className="text-center space-y-1">
-                    <h3 className="font-semibold text-sm text-slate-100">Authentication Required</h3>
-                    <p className="text-xs text-slate-400 max-w-sm">
-                      {authStatus.message || "Your session is expired or not signed in."}
+                  <div className="space-y-1">
+                    <h3 className="font-medium text-sm text-[#e3e3e3]">Authentication Required</h3>
+                    <p className="text-xs text-[#8e918f] leading-relaxed">
+                      {authStatus.message || "Sign in with your UGent account to fetch and sync course materials."}
                     </p>
                   </div>
                   <button
                     onClick={handleOpenLogin}
-                    className="flex items-center space-x-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded-lg text-xs transition shadow-md shadow-amber-500/20 active:scale-95"
+                    className="flex items-center space-x-2 px-5 py-2.5 bg-[#a8c7fa] hover:bg-[#c2e7ff] text-[#062e6f] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.98]"
                   >
                     <LogIn className="w-4 h-4" />
                     <span>Log in with UGent Ufora</span>
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-64 space-y-2 text-slate-400">
-                  <BookOpen className="w-8 h-8 text-slate-600" />
-                  <span className="text-sm font-medium text-slate-300">No courses loaded</span>
-                  <span className="text-xs text-slate-500">
-                    Make sure you have active course enrollments on Ufora.
-                  </span>
+                <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#8e918f] max-w-sm mx-auto p-6 rounded-3xl bg-[#1e1f20] border border-white/[0.08] text-center">
+                  <BookOpen className="w-6 h-6 text-[#8e918f]" />
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium text-[#e3e3e3] block">No courses found</span>
+                    <span className="text-xs text-[#8e918f] block">
+                      Make sure you have active course enrollments on Ufora.
+                    </span>
+                  </div>
                 </div>
               )
             ) : (

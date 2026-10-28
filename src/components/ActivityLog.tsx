@@ -24,15 +24,15 @@ export const ActivityLog = ({
   }, [logs, autoScroll]);
 
   const renderLine = (line: string, index: number) => {
-    let colorClass = "text-slate-300";
+    let colorClass = "text-[#c4c7c5]";
     if (line.includes("✓") || line.includes("All ") || line.includes("up to date")) {
-      colorClass = "text-emerald-400";
+      colorClass = "text-[#6dd58c]";
     } else if (line.includes("✗") || line.includes("Error") || line.includes("fail")) {
-      colorClass = "text-rose-400 font-medium";
+      colorClass = "text-[#f28b82] font-medium";
     } else if (line.includes("✎") || line.includes("Kept") || line.includes("Preserved")) {
-      colorClass = "text-amber-300";
+      colorClass = "text-[#ffb74d]";
     } else if (line.includes("Inspecting") || line.includes("Scanning") || line.includes("Starting")) {
-      colorClass = "text-sky-300";
+      colorClass = "text-[#a8c7fa]";
     }
 
     return (
@@ -43,30 +43,32 @@ export const ActivityLog = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0f1d] border border-slate-800/80 rounded-xl overflow-hidden shadow-inner">
+    <div className="flex flex-col h-full bg-[#1e1f20] border border-white/[0.08] rounded-2xl overflow-hidden">
       {/* Top bar */}
-      <div className="h-9 px-3 bg-slate-900/90 border-b border-slate-800/80 flex items-center justify-between text-xs text-slate-400 select-none">
-        <div className="flex items-center space-x-2">
-          <Terminal className="w-3.5 h-3.5 text-ugent-blue" />
-          <span className="font-semibold text-slate-300">Live Activity Log</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
+      <div className="h-10 px-4 bg-[#1e1f20] border-b border-white/[0.06] flex items-center justify-between text-xs text-[#8e918f] select-none">
+        <div className="flex items-center space-x-2.5">
+          <Terminal className="w-3.5 h-3.5 text-[#a8c7fa]" />
+          <span className="font-medium text-[#e3e3e3]">Activity Log</span>
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#282a2c] text-[#c4c7c5] font-mono">
             {logs.length} lines
           </span>
         </div>
 
-        <div className="flex items-center space-x-1.5">
+        <div className="flex items-center space-x-2">
           <button
             onClick={onTogglePause}
-            className="flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+            className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-[#282a2c] hover:bg-[#37393b] text-[#c4c7c5] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
           >
-            {isPaused ? <Play className="w-3 h-3 text-emerald-400" /> : <Pause className="w-3 h-3 text-amber-400" />}
+            {isPaused ? <Play className="w-3 h-3 text-[#6dd58c]" /> : <Pause className="w-3 h-3 text-[#ffb74d]" />}
             <span>{isPaused ? "Resume" : "Pause"}</span>
           </button>
 
           <button
             onClick={() => setAutoScroll(!autoScroll)}
-            className={`px-2 py-0.5 rounded text-[11px] transition ${
-              autoScroll ? "bg-ugent-blue/20 text-ugent-blue font-medium" : "bg-slate-800 text-slate-400"
+            className={`px-3 py-1 rounded-full text-[11px] font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
+              autoScroll
+                ? "bg-[#a8c7fa]/15 text-[#a8c7fa] border border-[#a8c7fa]/20"
+                : "bg-[#282a2c] text-[#8e918f] hover:text-[#c4c7c5]"
             }`}
           >
             Auto-scroll
@@ -74,8 +76,8 @@ export const ActivityLog = ({
 
           <button
             onClick={onClear}
-            className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
-            title="Clear logs view"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[#8e918f] hover:text-[#f28b82] hover:bg-[#282a2c] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
+            title="Clear logs"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -83,9 +85,9 @@ export const ActivityLog = ({
       </div>
 
       {/* Log scroll area */}
-      <div ref={containerRef} className="flex-1 p-3.5 overflow-y-auto space-y-1 select-text">
+      <div ref={containerRef} className="flex-1 p-4 overflow-y-auto space-y-1 select-text">
         {logs.length === 0 ? (
-          <div className="text-slate-500 font-mono text-xs italic">Waiting for sync activity…</div>
+          <div className="text-[#8e918f] font-mono text-xs italic">Waiting for sync activity…</div>
         ) : (
           logs.map((line, idx) => renderLine(line, idx))
         )}
