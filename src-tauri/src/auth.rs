@@ -125,6 +125,14 @@ pub fn read_token() -> Result<D2lToken, String> {
     Ok(token)
 }
 
+pub fn logout() -> Result<(), String> {
+    let path = get_token_path();
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete token file: {e}"))?;
+    }
+    Ok(())
+}
+
 pub fn is_token_expired(token: &D2lToken) -> bool {
     if let Some(exp) = token.exp {
         let now = chrono::Utc::now().timestamp() as f64;
@@ -276,5 +284,12 @@ mod tests {
         assert_eq!(exp, Some(1999999999.0));
         assert_eq!(sub, Some("1234567890".to_string()));
         assert_eq!(tenant, Some("ugent-test".to_string()));
+    }
+
+    #[test]
+    fn test_logout_succeeds_even_if_no_token() {
+        // Calling logout when file might or might not exist should return Ok(())
+        let res = logout();
+        assert!(res.is_ok());
     }
 }

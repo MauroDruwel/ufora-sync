@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthStatus {
@@ -57,6 +57,14 @@ pub fn get_auth_status() -> AuthStatus {
 #[tauri::command]
 pub fn open_login(app: tauri::AppHandle) -> Result<(), String> {
     auth::open_login_window(&app)
+}
+
+#[tauri::command]
+pub fn logout(app: tauri::AppHandle, engine: State<'_, Arc<SyncEngine>>) -> Result<(), String> {
+    auth::logout()?;
+    engine.log("Logged out from UGent Ufora. Local token cleared.");
+    let _ = app.emit("auth-status-changed", false);
+    Ok(())
 }
 
 #[tauri::command]

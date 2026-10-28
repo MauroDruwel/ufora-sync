@@ -6,7 +6,17 @@ import { Header } from "./components/Header";
 import { CourseCard } from "./components/CourseCard";
 import { ActivityLog } from "./components/ActivityLog";
 import { SettingsModal } from "./components/SettingsModal";
-import { BookOpen, CheckSquare, Square, RefreshCcw, LogIn } from "lucide-react";
+import {
+  BookOpen,
+  CheckSquare,
+  Square,
+  RefreshCcw,
+  LogIn,
+  LayoutGrid,
+  List,
+  Search,
+  X,
+} from "lucide-react";
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -20,6 +30,21 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoadingCourses, setIsLoadingCourses] = useState(true);
   const [activeTab, setActiveTab] = useState<"courses" | "logs">("courses");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("ufora_view_mode");
+      if (saved === "list" || saved === "grid") return saved;
+    }
+    return "grid";
+  });
+
+  const toggleViewMode = (mode: "grid" | "list") => {
+    setViewMode(mode);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("ufora_view_mode", mode);
+    }
+  };
 
   // Dynamic OS Dark/Light theme sync
   useEffect(() => {
@@ -52,7 +77,7 @@ export default function App() {
         const initialLogs: string[] = await invoke("get_recent_logs");
         setLogs(initialLogs);
 
-        // Load courses
+        // Load courses if authenticated
         try {
           const loadedCourses: Course[] = await invoke("list_courses");
           setCourses(loadedCourses);
@@ -93,6 +118,8 @@ export default function App() {
           const loadedCourses: Course[] = await invoke("list_courses");
           setCourses(loadedCourses);
           await invoke("sync_now");
+        } else {
+          setCourses([]);
         }
       } catch (err) {
         console.error("Failed to update auth status:", err);
@@ -181,6 +208,19 @@ export default function App() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await invoke("logout");
+      setAuthStatus({
+        is_authenticated: false,
+        message: "Logged out.",
+      });
+      setCourses([]);
+    } catch (err) {
+      console.error("Failed to log out:", err);
+    }
+  };
+
   if (!config) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#ffffff] dark:bg-[#131314] text-[#747775] dark:text-[#8e918f] font-sans text-xs">
@@ -191,6 +231,16 @@ export default function App() {
 
   const enabledCount = courses.filter((c) => config.enabled_courses.includes(c.id)).length;
 
+  const filteredCourses = courses.filter((c) => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="flex flex-col h-screen bg-[#ffffff] dark:bg-[#131314] text-[#1f1f1f] dark:text-[#e3e3e3] font-sans select-none overflow-hidden transition-colors duration-150">
       {/* Top Header with traffic light safe area */}
@@ -199,6 +249,7 @@ export default function App() {
         isAuthenticated={authStatus.is_authenticated}
         onSyncNow={handleSyncNow}
         onLogin={handleOpenLogin}
+        onLogout={handleLogout}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenSyncFolder={handleOpenSyncFolder}
         onOpenUforaWeb={() => handleOpenUrl("https://ufora.ugent.be")}
@@ -232,20 +283,68 @@ export default function App() {
           </button>
         </div>
 
-        {activeTab === "courses" && (
+        {activeTab === "courses" && courses.length > 0 && (
           <div className="flex items-center space-x-3 text-xs text-[#747775] dark:text-[#8e918f]">
-            <span>
-              <strong className="text-[#1f1f1f] dark:text-[#c4c7c5] font-medium">{enabledCount}</strong> of{" "}
-              {courses.length} active
-            </span>
-            <div className="flex items-center space-x-1.5 border-l border-black/[0.08] dark:border-white/[0.08] pl-3">
+            {/* Search input */}
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 text-[#747775] dark:text-[#8e918f] pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filter courses…"
+                className="pl-8 pr-7 py-1 text-xs rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] focus:bg-[#ffffff] dark:focus:bg-[#131314] border border-black/[0.08] dark:border-white/[0.08] focus:border-[#1a73e8] dark:focus:border-[#a8c7fa] focus:outline-none text-[#1f1f1f] dark:text-[#e3e3e3] placeholder-[#747775] dark:placeholder-[#8e918f] w-36 sm:w-44 transition duration-150"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
+                  title="Clear filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* View Mode Toggle */}
+            <div className="flex items-center p-0.5 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08]">
+              <button
+                onClick={() => toggleViewMode("grid")}
+                className={`p-1.5 rounded-full transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
+                  viewMode === "grid"
+                    ? "bg-[#ffffff] dark:bg-[#282a2c] text-[#1a73e8] dark:text-[#a8c7fa] shadow-sm"
+                    : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
+                }`}
+                title="Grid view"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => toggleViewMode("list")}
+                className={`p-1.5 rounded-full transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
+                  viewMode === "list"
+                    ? "bg-[#ffffff] dark:bg-[#282a2c] text-[#1a73e8] dark:text-[#a8c7fa] shadow-sm"
+                    : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
+                }`}
+                title="List view"
+              >
+                <List className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Active Count & Select All/None */}
+            <div className="flex items-center space-x-2 border-l border-black/[0.08] dark:border-white/[0.08] pl-3">
+              <span className="hidden sm:inline">
+                <strong className="text-[#1f1f1f] dark:text-[#c4c7c5] font-medium">{enabledCount}</strong>/
+                {courses.length} active
+              </span>
               <button
                 onClick={() => handleSelectAll(true)}
                 className="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[#f0f4f9] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] border border-black/[0.06] dark:border-white/[0.06] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
                 title="Enable all courses"
               >
                 <CheckSquare className="w-3.5 h-3.5 text-[#1a73e8] dark:text-[#a8c7fa]" />
-                <span>All</span>
+                <span className="hidden md:inline">All</span>
               </button>
               <button
                 onClick={() => handleSelectAll(false)}
@@ -253,7 +352,7 @@ export default function App() {
                 title="Disable all courses"
               >
                 <Square className="w-3.5 h-3.5" />
-                <span>None</span>
+                <span className="hidden md:inline">None</span>
               </button>
             </div>
           </div>
@@ -263,7 +362,7 @@ export default function App() {
       {/* Main Body */}
       <main className="flex-1 overflow-hidden p-6">
         {activeTab === "courses" ? (
-          <div className="h-full overflow-y-auto space-y-2.5 pr-1">
+          <div className="h-full overflow-y-auto pr-1">
             {isLoadingCourses ? (
               <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#747775] dark:text-[#8e918f]">
                 <RefreshCcw className="w-5 h-5 animate-spin text-[#1a73e8] dark:text-[#a8c7fa]" />
@@ -304,17 +403,44 @@ export default function App() {
                   </div>
                 </div>
               )
+            ) : filteredCourses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#747775] dark:text-[#8e918f] max-w-sm mx-auto p-6 rounded-3xl bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-center">
+                <Search className="w-6 h-6 text-[#747775] dark:text-[#8e918f]" />
+                <div className="space-y-1">
+                  <span className="text-sm font-medium text-[#1f1f1f] dark:text-[#e3e3e3] block">
+                    No matching courses
+                  </span>
+                  <span className="text-xs text-[#747775] dark:text-[#8e918f] block">
+                    No courses match "{searchQuery}".
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#ffffff] dark:bg-[#282a2c] hover:bg-[#e9eef6] dark:hover:bg-[#37393b] text-[#1a73e8] dark:text-[#a8c7fa] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 active:scale-[0.96]"
+                >
+                  Clear search
+                </button>
+              </div>
             ) : (
-              courses.map((course) => (
-                <CourseCard
-                  key={course.id}
-                  course={course}
-                  isEnabled={config.enabled_courses.length === 0 || config.enabled_courses.includes(course.id)}
-                  onToggle={handleToggleCourse}
-                  onOpenFolder={handleOpenCourseFolder}
-                  onOpenUrl={handleOpenUrl}
-                />
-              ))
+              <div
+                className={
+                  viewMode === "grid"
+                    ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+                    : "space-y-2.5"
+                }
+              >
+                {filteredCourses.map((course) => (
+                  <CourseCard
+                    key={course.id}
+                    course={course}
+                    viewMode={viewMode}
+                    isEnabled={config.enabled_courses.length === 0 || config.enabled_courses.includes(course.id)}
+                    onToggle={handleToggleCourse}
+                    onOpenFolder={handleOpenCourseFolder}
+                    onOpenUrl={handleOpenUrl}
+                  />
+                ))}
+              </div>
             )}
           </div>
         ) : (
@@ -335,6 +461,7 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
         onLogin={handleOpenLogin}
+        onLogout={handleLogout}
       />
     </div>
   );

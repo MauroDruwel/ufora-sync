@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-10-28
 
 ### Added
+- **Course Grid View & Search Filtering**:
+  - Added multi-column responsive Grid View (`LayoutGrid`) alongside classic List View (`List`), with persistent layout preference.
+  - Added instant search filter for courses matching by course name, code, or ID, designed for users enrolled in many courses.
+- **UGent Ufora Logout Action**:
+  - Added native logout command that clears `~/.d2l/token.json` and updates session state across the app.
+  - Added accessible Logout buttons in the top Header, Settings modal, and system tray menu.
 - **Native Tauri v2 + Rust Architecture**: Complete ground-up rewrite replacing legacy Python daemon with an ultra-lightweight, high-performance Rust core and React 18 / TypeScript frontend. RAM consumption reduced from ~120 MB to <15 MB.
 - **Native Embedded SSO Login**: Integrated native WebKit / WebView2 authentication modal with automatic session cookie extraction and persistence to `~/.d2l/token.json`. Completely eliminates external Python dependencies and manual terminal login commands.
 - **Google Gemini Web UI Design System**:

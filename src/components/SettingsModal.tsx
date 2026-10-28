@@ -2,7 +2,7 @@ import { useState, FormEvent } from "react";
 import { AppConfig, AuthStatus } from "../types";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { enable as enableAutostart, disable as disableAutostart } from "@tauri-apps/plugin-autostart";
-import { X, Folder, Check, ShieldCheck, AlertCircle, LogIn } from "lucide-react";
+import { X, Folder, Check, ShieldCheck, AlertCircle, LogIn, LogOut } from "lucide-react";
 
 interface SettingsModalProps {
   config: AppConfig;
@@ -11,6 +11,7 @@ interface SettingsModalProps {
   onClose: () => void;
   onSave: (newConfig: AppConfig) => Promise<void>;
   onLogin?: () => void;
+  onLogout?: () => void;
 }
 
 export const SettingsModal = ({
@@ -20,6 +21,7 @@ export const SettingsModal = ({
   onClose,
   onSave,
   onLogin,
+  onLogout,
 }: SettingsModalProps) => {
   const [syncDir, setSyncDir] = useState(config.sync_dir);
   const [interval, setInterval] = useState(config.interval_minutes);
@@ -132,7 +134,16 @@ export const SettingsModal = ({
               >
                 {authStatus.is_authenticated ? "Connected" : "Disconnected"}
               </span>
-              {!authStatus.is_authenticated && onLogin && (
+              {authStatus.is_authenticated && onLogout ? (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="flex items-center space-x-1 px-3 py-1 bg-[#b3261e]/10 hover:bg-[#b3261e]/20 text-[#b3261e] dark:text-[#f2b8b5] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
+                >
+                  <LogOut className="w-3 h-3" />
+                  <span>Log Out</span>
+                </button>
+              ) : !authStatus.is_authenticated && onLogin ? (
                 <button
                   type="button"
                   onClick={onLogin}
@@ -141,7 +152,7 @@ export const SettingsModal = ({
                   <LogIn className="w-3 h-3" />
                   <span>Log In</span>
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
 

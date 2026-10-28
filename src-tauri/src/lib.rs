@@ -80,6 +80,7 @@ pub fn run() {
             commands::save_config,
             commands::get_auth_status,
             commands::open_login,
+            commands::logout,
             commands::list_courses,
             commands::sync_now,
             commands::pause_sync,
