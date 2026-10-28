@@ -466,8 +466,6 @@ def test_migrate_course_manifest_preserves_user_files(tmp_path: Path):
 
 
 def test_dataless_placeholder_prevents_hydration(monkeypatch, tmp_path: Path):
-    import stat
-
     from ufora_sync.sync import SyncManifest, _is_dataless_placeholder
 
     f = tmp_path / "big_video.mp4"
@@ -480,8 +478,7 @@ def test_dataless_placeholder_prevents_hydration(monkeypatch, tmp_path: Path):
     class FakeStat:
         st_flags = 0x40000000  # SF_DATALESS
 
-    monkeypatch.setattr(stat, "SF_DATALESS", 0x40000000, raising=False)
-    monkeypatch.setattr(Path, "stat", lambda self, *args, **kwargs: FakeStat())
+    monkeypatch.setattr(Path, "stat", lambda self: FakeStat())
     assert _is_dataless_placeholder(f) is True
 
     # is_locally_edited must return False and NOT open or re-read the file

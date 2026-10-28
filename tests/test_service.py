@@ -4,15 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from ufora_sync.config import AppConfig
 from ufora_sync.service import SyncService
-
-
-@pytest.fixture(autouse=True)
-def isolate_service_config_dir(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr("ufora_sync.service.get_default_config_dir", lambda: tmp_path)
 
 
 def test_service_initial_state(tmp_path: Path):

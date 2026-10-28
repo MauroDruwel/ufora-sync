@@ -9,6 +9,14 @@ build/
 *.egg-info/
 *.egg
 
+# Node / Vite
+node_modules/
+dist-ssr/
+*.local
+
+# Tauri / Rust
+src-tauri/target/
+
 # uv
 uv.lock
 .python-version
@@ -31,3 +39,4 @@ htmlcov/
 .idea/
 .vscode/
 *.swp
+

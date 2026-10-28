@@ -1,0 +1,26 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: "Release tag (e.g. v1.0.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tauri-release:
+    uses: MauroDruwel/quality-gate/.github/workflows/tauri-release.yml@main
+    with:
+      release-tag: ${{ github.event.inputs.release-tag || github.ref_name }}
+      package-manager: "pnpm"
+      pnpm-version: "10"
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
