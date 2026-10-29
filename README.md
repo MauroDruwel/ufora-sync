@@ -13,7 +13,7 @@
 
 ### Because clicking through 14 subfolders on Ufora every Sunday evening is nobody's hobby.
 
-You know the drill: it’s 8:15 AM, you’re sitting in an auditorium at Campus De Sterre or Plateau, eduroam is having an existential crisis, and the prof announces: *"I uploaded the updated exercises 10 minutes ago on Ufora."*
+You know the drill: it’s 8:15 AM, you’re sitting in an auditorium on campus, eduroam is having an existential crisis, and the prof announces: *"I uploaded the updated exercises 10 minutes ago on Ufora."*
 
 Now you're furiously refreshing Brightspace on 4G, clicking through *Inhoud → Lesmateriaal → Werkcolleges → Week 4 → Definitief → echt_deze_v2.pdf*, waiting for a 2 MB file to download.
 
