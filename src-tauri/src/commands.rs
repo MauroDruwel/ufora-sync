@@ -146,6 +146,29 @@ pub struct UpdateInfo {
     pub published_at: Option<String>,
 }
 
+pub fn is_newer_version(latest_tag: &str, current_ver: &str) -> bool {
+    let parse = |v: &str| -> Vec<u64> {
+        v.trim_start_matches('v')
+            .split(['.', '-', '+'])
+            .filter_map(|s| s.parse::<u64>().ok())
+            .collect()
+    };
+    let latest = parse(latest_tag);
+    let current = parse(current_ver);
+
+    let max_len = latest.len().max(current.len());
+    for i in 0..max_len {
+        let l = latest.get(i).copied().unwrap_or(0);
+        let c = current.get(i).copied().unwrap_or(0);
+        if l > c {
+            return true;
+        } else if l < c {
+            return false;
+        }
+    }
+    false
+}
+
 #[tauri::command]
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
     let current_version = env!("CARGO_PKG_VERSION").to_string();
@@ -188,7 +211,7 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let has_update = !tag.is_empty() && tag != current_version;
+    let has_update = is_newer_version(&tag, &current_version);
 
     Ok(UpdateInfo {
         current_version,
@@ -207,6 +230,16 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_newer_version() {
+        assert!(!is_newer_version("0.2.6", "1.0.0"));
+        assert!(!is_newer_version("v0.2.6", "1.0.0"));
+        assert!(!is_newer_version("1.0.0", "1.0.0"));
+        assert!(is_newer_version("1.0.1", "1.0.0"));
+        assert!(is_newer_version("v1.1.0", "1.0.0"));
+        assert!(is_newer_version("2.0.0", "1.0.0"));
+    }
 
     #[test]
     fn test_update_info_serialization() {
