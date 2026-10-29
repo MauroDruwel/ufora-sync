@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, RefreshCw, Settings, Folder, ExternalLink, LogIn } from "lucide-react";
+import { RefreshCw, Settings, Folder, ExternalLink, LogIn } from "lucide-react";
 
 interface HeaderProps {
   status: "idle" | "syncing" | "paused" | "error";
@@ -38,9 +38,11 @@ export const Header = ({
     >
       {/* Title & Status */}
       <div data-tauri-drag-region className="flex items-center space-x-3.5">
-        <div className="w-9 h-9 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] flex items-center justify-center text-[#1a73e8] dark:text-[#a8c7fa] shrink-0">
-          <Sparkles className="w-4 h-4" />
-        </div>
+        <img
+          src="/app-logo.png"
+          alt="Ufora Sync"
+          className="w-9 h-9 rounded-xl shadow-sm shrink-0 object-cover"
+        />
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="font-medium text-[15px] text-[#1f1f1f] dark:text-[#e3e3e3] tracking-normal">

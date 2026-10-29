@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-10-28
 
 ### Added
+- **Official Application Branding & Iconography**:
+  - Replaced temporary icons and placeholder sparkles with the official UGent Ufora Sync squircle emblem across macOS (`icon.icns`), Windows (`icon.ico`), Linux (`icon.png`), and the desktop app header.
+  - Added high-resolution assets to `assets/logo.png` and `public/app-logo.png`.
 - **Course Selection Safety & Confirmation**:
   - Replaced raw "All" and "None" toggle buttons with a batch selection popover menu (`{count} active ▾`) including Invert Selection.
   - Added Material-style confirmation dialogs before executing "Disable All" or "Enable All" to eliminate accidental misclicks.
