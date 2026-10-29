@@ -126,9 +126,12 @@ pub fn read_token() -> Result<D2lToken, String> {
 }
 
 pub fn logout() -> Result<(), String> {
-    let path = get_token_path();
+    logout_at(&get_token_path())
+}
+
+pub fn logout_at(path: &std::path::Path) -> Result<(), String> {
     if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete token file: {e}"))?;
+        std::fs::remove_file(path).map_err(|e| format!("Failed to delete token file: {e}"))?;
     }
     Ok(())
 }
@@ -287,9 +290,24 @@ mod tests {
     }
 
     #[test]
-    fn test_logout_succeeds_even_if_no_token() {
-        // Calling logout when file might or might not exist should return Ok(())
-        let res = logout();
-        assert!(res.is_ok());
+    fn test_logout_removes_file_safely() {
+        // Must use an isolated temporary path so unit tests never touch ~/.d2l/token.json
+        let test_dir = std::env::temp_dir().join(format!("ufora_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&test_dir);
+        let token_path = test_dir.join("token.json");
+
+        // 1. Should succeed if file does not exist
+        assert!(!token_path.exists());
+        let res1 = logout_at(&token_path);
+        assert!(res1.is_ok());
+
+        // 2. Should remove file if it exists
+        std::fs::write(&token_path, "{}").unwrap();
+        assert!(token_path.exists());
+        let res2 = logout_at(&token_path);
+        assert!(res2.is_ok());
+        assert!(!token_path.exists());
+
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 }
