@@ -1,5 +1,5 @@
 import { useState, FormEvent } from "react";
-import { AppConfig, AuthStatus, UpdateInfo } from "../types";
+import { AppConfig, AuthStatus } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { enable as enableAutostart, disable as disableAutostart } from "@tauri-apps/plugin-autostart";
@@ -11,10 +11,7 @@ import {
   AlertCircle,
   LogIn,
   LogOut,
-  RefreshCw,
-  ArrowUpCircle,
   ExternalLink,
-  Info,
 } from "lucide-react";
 
 interface SettingsModalProps {
@@ -43,13 +40,11 @@ export const SettingsModal = ({
   const [syncDesc, setSyncDesc] = useState(config.sync_descriptions);
   const [syncLinks, setSyncLinks] = useState(config.sync_links);
   const [autostart, setAutostart] = useState(config.auto_start_tray);
+  const [showAllCourses, setShowAllCourses] = useState(config.show_all_courses ?? false);
+  const [showGroups, setShowGroups] = useState(config.show_groups ?? false);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
-
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
-  const [updateCheckMessage, setUpdateCheckMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -65,23 +60,6 @@ export const SettingsModal = ({
       }
     } catch (err) {
       console.error("Failed to open dialog:", err);
-    }
-  };
-
-  const handleCheckUpdates = async () => {
-    setIsCheckingUpdate(true);
-    setUpdateCheckMessage(null);
-    try {
-      const info: UpdateInfo = await invoke("check_for_updates");
-      setUpdateInfo(info);
-      if (!info.has_update) {
-        setUpdateCheckMessage(`Ufora Sync is up to date (v${info.current_version})`);
-      }
-    } catch (err) {
-      console.error("Failed to check for updates:", err);
-      setUpdateCheckMessage("Unable to connect to GitHub releases.");
-    } finally {
-      setIsCheckingUpdate(false);
     }
   };
 
@@ -112,6 +90,8 @@ export const SettingsModal = ({
         sync_descriptions: syncDesc,
         sync_links: syncLinks,
         auto_start_tray: autostart,
+        show_all_courses: showAllCourses,
+        show_groups: showGroups,
       });
       setSavedSuccess(true);
       setTimeout(() => {
@@ -279,7 +259,53 @@ export const SettingsModal = ({
             </div>
           </div>
 
-          {/* Checkboxes */}
+          {/* Course Visibility & Filtering */}
+          <div className="space-y-3 pt-3 border-t border-black/[0.06] dark:border-white/[0.06]">
+            <div>
+              <label className="font-medium text-[#444746] dark:text-[#c4c7c5] block">
+                Course Display & Filtering
+              </label>
+              <p className="text-[11px] text-[#747775] dark:text-[#8e918f] mt-0.5">
+                Keep your dashboard focused on current classes. Turn these on if you need older enrollments.
+              </p>
+            </div>
+
+            <label className="flex items-start space-x-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showAllCourses}
+                onChange={(e) => setShowAllCourses(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-black/[0.12] dark:border-white/[0.12] bg-[#ffffff] dark:bg-[#131314] text-[#1a73e8] dark:text-[#a8c7fa] focus:ring-0 cursor-pointer"
+              />
+              <div>
+                <span className="text-[#1f1f1f] dark:text-[#e3e3e3] block">
+                  Show courses from previous academic years
+                </span>
+                <span className="text-[11px] text-[#747775] dark:text-[#8e918f] block">
+                  Include historical courses from previous years (e.g. 2024–2025)
+                </span>
+              </div>
+            </label>
+
+            <label className="flex items-start space-x-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showGroups}
+                onChange={(e) => setShowGroups(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-black/[0.12] dark:border-white/[0.12] bg-[#ffffff] dark:bg-[#131314] text-[#1a73e8] dark:text-[#a8c7fa] focus:ring-0 cursor-pointer"
+              />
+              <div>
+                <span className="text-[#1f1f1f] dark:text-[#e3e3e3] block">
+                  Show project groups and organization units
+                </span>
+                <span className="text-[11px] text-[#747775] dark:text-[#8e918f] block">
+                  Include group allocations (e.g. "Groep 4") and faculty info portals
+                </span>
+              </div>
+            </label>
+          </div>
+
+          {/* Sync Behavior Checkboxes */}
           <div className="space-y-3 pt-3 border-t border-black/[0.06] dark:border-white/[0.06]">
             <label className="flex items-center space-x-3 cursor-pointer select-none">
               <input
@@ -318,66 +344,38 @@ export const SettingsModal = ({
             </label>
           </div>
 
-          {/* About & Updates Card */}
-          <div className="p-4 rounded-2xl bg-[#f0f4f9] dark:bg-[#131314] border border-black/[0.06] dark:border-white/[0.06] space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <img
-                  src="/app-logo.png"
-                  alt="Ufora Sync"
-                  className="w-9 h-9 rounded-xl shadow-sm shrink-0 object-cover"
-                />
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-medium text-xs text-[#1f1f1f] dark:text-[#e3e3e3]">
-                      Ufora Sync
-                    </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#ffffff] dark:bg-[#1e1f20] text-[#444746] dark:text-[#c4c7c5] border border-black/[0.08] dark:border-white/[0.08]">
-                      v1.0.0
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-[#747775] dark:text-[#8e918f]">
-                    By Mauro Druwel · MIT License
-                  </p>
+          {/* About & Releases Card */}
+          <div className="p-4 rounded-2xl bg-[#f0f4f9] dark:bg-[#131314] border border-black/[0.06] dark:border-white/[0.06] flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <img
+                src="/app-logo.png"
+                alt="Ufora Sync"
+                className="w-9 h-9 rounded-xl shadow-sm shrink-0 object-cover"
+              />
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="font-medium text-xs text-[#1f1f1f] dark:text-[#e3e3e3]">
+                    Ufora Sync
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#ffffff] dark:bg-[#1e1f20] text-[#444746] dark:text-[#c4c7c5] border border-black/[0.08] dark:border-white/[0.08]">
+                    v1.0.0
+                  </span>
                 </div>
+                <p className="text-[11px] text-[#747775] dark:text-[#8e918f]">
+                  By Mauro Druwel · MIT License
+                </p>
               </div>
-
-              <button
-                type="button"
-                onClick={handleCheckUpdates}
-                disabled={isCheckingUpdate}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#ffffff] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 active:scale-[0.96]"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 text-[#1a73e8] dark:text-[#a8c7fa] ${
-                    isCheckingUpdate ? "animate-spin" : ""
-                  }`}
-                />
-                <span>{isCheckingUpdate ? "Checking…" : "Check for Updates"}</span>
-              </button>
             </div>
 
-            {updateInfo?.has_update ? (
-              <div className="p-3 rounded-xl bg-[#1a73e8]/10 dark:bg-[#a8c7fa]/10 border border-[#1a73e8]/20 flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-xs text-[#1a73e8] dark:text-[#a8c7fa]">
-                  <ArrowUpCircle className="w-4 h-4 shrink-0" />
-                  <span>Update available: v{updateInfo.latest_version}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => invoke("open_url", { url: updateInfo.html_url })}
-                  className="flex items-center space-x-1 px-3 py-1 bg-[#1a73e8] dark:bg-[#a8c7fa] text-white dark:text-[#062e6f] font-medium rounded-full text-xs transition active:scale-[0.96]"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  <span>View Release</span>
-                </button>
-              </div>
-            ) : updateCheckMessage ? (
-              <p className="text-[11px] text-[#747775] dark:text-[#8e918f] flex items-center space-x-1.5">
-                <Info className="w-3.5 h-3.5 text-[#188038] dark:text-[#6dd58c]" />
-                <span>{updateCheckMessage}</span>
-              </p>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => invoke("open_url", { url: "https://github.com/MauroDruwel/ufora-sync/releases" })}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#ffffff] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 active:scale-[0.96]"
+              title="Open GitHub Releases in your browser"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-[#1a73e8] dark:text-[#a8c7fa]" />
+              <span>View Releases</span>
+            </button>
           </div>
 
           {/* Footer */}

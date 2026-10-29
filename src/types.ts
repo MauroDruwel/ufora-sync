@@ -19,6 +19,8 @@ export interface AppConfig {
   auto_start_tray: boolean;
   last_sync_time?: string | null;
   last_sync_status?: string | null;
+  show_all_courses?: boolean;
+  show_groups?: boolean;
 }
 
 export interface AuthStatus {

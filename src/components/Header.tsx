@@ -73,16 +73,20 @@ export const Header = ({
         isMac ? "pl-20" : "pl-6"
       }`}
     >
-      {/* Left side: Sleek dynamic status (no redundant logo/title/v1.0 badge) */}
-      <div data-tauri-drag-region className="flex items-center space-x-2.5 py-1">
-        <span className={`w-2.5 h-2.5 rounded-full shrink-0 transition-colors duration-200 ${dotColor}`} />
-        <span className="text-xs font-medium text-[#444746] dark:text-[#c4c7c5] tracking-tight">
-          {statusLabel}
-        </span>
-      </div>
+      {/* Left side: Clean macOS window drag area (no traffic light clash) */}
+      <div data-tauri-drag-region className="flex-1 h-full" />
 
-      {/* Action buttons */}
-      <div className="flex items-center space-x-2">
+      {/* Right side: Dynamic status pill + Action buttons */}
+      <div className="flex items-center space-x-2.5">
+        {/* Dynamic Status Pill */}
+        <div
+          className="flex items-center space-x-2 px-3 py-1 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-xs font-medium text-[#444746] dark:text-[#c4c7c5] transition-colors duration-150"
+          title={statusLabel}
+        >
+          <span className={`w-2 h-2 rounded-full shrink-0 transition-colors duration-200 ${dotColor}`} />
+          <span className="tracking-tight">{statusLabel}</span>
+        </div>
+
         {!isAuthenticated && onLogin && (
           <button
             onClick={onLogin}

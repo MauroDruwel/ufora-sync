@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ArrowLeftRight,
   AlertTriangle,
+  Sliders,
 } from "lucide-react";
 
 interface ConfirmDialogState {
@@ -30,8 +31,6 @@ interface ConfirmDialogState {
   variant: "primary" | "danger";
   action: () => Promise<void>;
 }
-
-type CourseCategory = "current" | "all_courses" | "groups" | "all";
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -45,7 +44,6 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoadingCourses, setIsLoadingCourses] = useState(true);
   const [activeTab, setActiveTab] = useState<"courses" | "logs">("courses");
-  const [courseCategory, setCourseCategory] = useState<CourseCategory>("current");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSelectionMenuOpen, setIsSelectionMenuOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
@@ -174,26 +172,22 @@ export default function App() {
     return now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
   })();
 
-  const currentCourses = courses.filter(
-    (c) => c.is_course_offering !== false && (c.academic_year === currentAcademicYear || !c.academic_year)
-  );
-  const allCourseOfferings = courses.filter((c) => c.is_course_offering !== false);
-  const groupCourses = courses.filter((c) => c.is_course_offering === false);
-
-  const categoryFilteredCourses = courses.filter((c) => {
-    if (courseCategory === "current") {
-      return c.is_course_offering !== false && (c.academic_year === currentAcademicYear || !c.academic_year);
+  // Filter courses based on user preferences in settings
+  const displayedCourses = courses.filter((c) => {
+    // If show_groups is false (default), hide groups & non-course workspaces
+    if (!config?.show_groups && c.is_course_offering === false) {
+      return false;
     }
-    if (courseCategory === "all_courses") {
-      return c.is_course_offering !== false;
-    }
-    if (courseCategory === "groups") {
-      return c.is_course_offering === false;
+    // If show_all_courses is false (default), only show offerings for current academic year (or offering with no year suffix)
+    if (!config?.show_all_courses && c.is_course_offering !== false) {
+      if (c.academic_year && c.academic_year !== currentAcademicYear) {
+        return false;
+      }
     }
     return true;
   });
 
-  const filteredCourses = categoryFilteredCourses.filter((c) => {
+  const filteredCourses = displayedCourses.filter((c) => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
     return (
@@ -350,7 +344,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-[#ffffff] dark:bg-[#131314] text-[#1f1f1f] dark:text-[#e3e3e3] font-sans select-none overflow-hidden transition-colors duration-150">
-      {/* Top Header with traffic light safe area & dynamic status */}
+      {/* Top Header with traffic light safe area & dynamic status pill on the right */}
       <Header
         status={syncStatus}
         lastSyncTime={config.last_sync_time}
@@ -363,79 +357,35 @@ export default function App() {
         onOpenUforaWeb={() => handleOpenUrl("https://ufora.ugent.be")}
       />
 
-      {/* Tabs & Controls */}
+      {/* Tabs & Controls Toolbar (Clean Google Gemini style, no clutter) */}
       <div className="flex items-center justify-between px-6 py-2.5 border-b border-black/[0.08] dark:border-white/[0.08] bg-[#ffffff] dark:bg-[#131314] transition-colors duration-150">
-        <div className="flex items-center space-x-3">
-          {/* Main View Tabs */}
-          <div className="flex items-center space-x-1">
-            <button
-              onClick={() => setActiveTab("courses")}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
-                activeTab === "courses"
-                  ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
-                  : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
-              }`}
-            >
-              Courses
-            </button>
-            <button
-              onClick={() => setActiveTab("logs")}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] flex items-center space-x-2 ${
-                activeTab === "logs"
-                  ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
-                  : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
-              }`}
-            >
-              <span>Activity Log</span>
-              {syncStatus === "syncing" && (
-                <span className="w-1.5 h-1.5 rounded-full bg-[#1a73e8] dark:bg-[#a8c7fa] animate-ping" />
-              )}
-            </button>
-          </div>
-
-          {/* Academic Year & Category Filter Pills (Filters out 60 past years and group placeholders) */}
-          {activeTab === "courses" && courses.length > 0 && (
-            <div className="flex items-center p-0.5 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-xs">
-              <button
-                onClick={() => setCourseCategory("current")}
-                className={`px-3 py-1 rounded-full font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
-                  courseCategory === "current"
-                    ? "bg-[#ffffff] dark:bg-[#282a2c] text-[#1a73e8] dark:text-[#a8c7fa] shadow-sm"
-                    : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
-                }`}
-                title="Active courses for current academic year (2026-2027)"
-              >
-                Current ({currentCourses.length})
-              </button>
-              <button
-                onClick={() => setCourseCategory("all_courses")}
-                className={`px-3 py-1 rounded-full font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
-                  courseCategory === "all_courses"
-                    ? "bg-[#ffffff] dark:bg-[#282a2c] text-[#1a73e8] dark:text-[#a8c7fa] shadow-sm"
-                    : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
-                }`}
-                title="All course offerings including past academic years"
-              >
-                All Courses ({allCourseOfferings.length})
-              </button>
-              {groupCourses.length > 0 && (
-                <button
-                  onClick={() => setCourseCategory("groups")}
-                  className={`px-3 py-1 rounded-full font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
-                    courseCategory === "groups"
-                      ? "bg-[#ffffff] dark:bg-[#282a2c] text-[#1a73e8] dark:text-[#a8c7fa] shadow-sm"
-                      : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
-                  }`}
-                  title="Project groups and organizational units"
-                >
-                  Groups ({groupCourses.length})
-                </button>
-              )}
-            </div>
-          )}
+        <div className="flex items-center space-x-1.5">
+          <button
+            onClick={() => setActiveTab("courses")}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
+              activeTab === "courses"
+                ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
+                : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
+            }`}
+          >
+            Courses ({displayedCourses.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("logs")}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] flex items-center space-x-2 ${
+              activeTab === "logs"
+                ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
+                : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
+            }`}
+          >
+            <span>Activity Log</span>
+            {syncStatus === "syncing" && (
+              <span className="w-1.5 h-1.5 rounded-full bg-[#1a73e8] dark:bg-[#a8c7fa] animate-ping" />
+            )}
+          </button>
         </div>
 
-        {activeTab === "courses" && courses.length > 0 && (
+        {activeTab === "courses" && displayedCourses.length > 0 && (
           <div className="flex items-center space-x-3 text-xs text-[#747775] dark:text-[#8e918f]">
             {/* Search input */}
             <div className="relative flex items-center">
@@ -591,17 +541,19 @@ export default function App() {
                 </div>
               )
             ) : filteredCourses.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#747775] dark:text-[#8e918f] max-w-sm mx-auto p-6 rounded-3xl bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-center">
+              <div className="flex flex-col items-center justify-center h-64 space-y-3.5 text-[#747775] dark:text-[#8e918f] max-w-sm mx-auto p-6 rounded-3xl bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-center">
                 <Search className="w-6 h-6 text-[#747775] dark:text-[#8e918f]" />
                 <div className="space-y-1">
                   <span className="text-sm font-medium text-[#1f1f1f] dark:text-[#e3e3e3] block">
                     No matching courses
                   </span>
-                  <span className="text-xs text-[#747775] dark:text-[#8e918f] block">
-                    No courses match "{searchQuery}" in this view.
-                  </span>
+                  <p className="text-xs text-[#747775] dark:text-[#8e918f]">
+                    {searchQuery
+                      ? `No visible courses match "${searchQuery}".`
+                      : "No courses are currently visible under your active filter."}
+                  </p>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 pt-1">
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery("")}
@@ -610,14 +562,13 @@ export default function App() {
                       Clear search
                     </button>
                   )}
-                  {courseCategory !== "all_courses" && (
-                    <button
-                      onClick={() => setCourseCategory("all_courses")}
-                      className="px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#ffffff] dark:bg-[#282a2c] hover:bg-[#e9eef6] dark:hover:bg-[#37393b] text-[#444746] dark:text-[#c4c7c5] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 active:scale-[0.96]"
-                    >
-                      View All Courses
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#ffffff] dark:bg-[#282a2c] hover:bg-[#e9eef6] dark:hover:bg-[#37393b] text-[#444746] dark:text-[#c4c7c5] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 active:scale-[0.96]"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-[#1a73e8] dark:text-[#a8c7fa]" />
+                    <span>Filter Settings</span>
+                  </button>
                 </div>
               </div>
             ) : (

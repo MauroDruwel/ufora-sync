@@ -13,6 +13,10 @@ pub struct AppConfig {
     pub auto_start_tray: bool,
     pub last_sync_time: Option<String>,
     pub last_sync_status: Option<String>,
+    #[serde(default)]
+    pub show_all_courses: bool,
+    #[serde(default)]
+    pub show_groups: bool,
 }
 
 impl Default for AppConfig {
@@ -35,6 +39,8 @@ impl Default for AppConfig {
             auto_start_tray: true,
             last_sync_time: None,
             last_sync_status: Some("Ready".to_string()),
+            show_all_courses: false,
+            show_groups: false,
         }
     }
 }
@@ -111,6 +117,8 @@ mod tests {
             auto_start_tray: false,
             last_sync_time: Some("2026-10-05T20:00:00Z".to_string()),
             last_sync_status: Some("Success".to_string()),
+            show_all_courses: false,
+            show_groups: false,
         };
 
         let json = serde_json::to_string(&cfg).expect("Serialization failed");
