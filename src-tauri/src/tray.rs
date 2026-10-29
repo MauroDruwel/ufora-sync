@@ -84,7 +84,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .name(Some("Ufora Sync"))
         .version(Some(env!("CARGO_PKG_VERSION")))
         .authors(Some(vec!["Mauro Druwel".to_string()]))
-        .copyright(Some("Copyright © 2026 Mauro Druwel. MIT License."))
+        .copyright(Some("MIT License · Mauro Druwel"))
         .comments(Some(
             "Mauro Druwel — MIT License\nNative background sync service for UGent Ufora",
         ))
