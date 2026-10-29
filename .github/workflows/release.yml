@@ -11,6 +11,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -22,5 +25,3 @@ jobs:
       release-tag: ${{ github.event.inputs.release-tag || github.ref_name }}
       package-manager: "pnpm"
       pnpm-version: "10"
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
