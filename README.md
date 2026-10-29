@@ -68,6 +68,14 @@ No command line required. Just download, open, and log in with your UGent accoun
 
 ---
 
+## 📸 In Action
+
+| ⚙️ Preferences & Conflict Settings | ⚡ Live Incremental Sync Logs |
+| :---: | :---: |
+| <img src="assets/settings-screenshot.png" width="100%" alt="Preferences & Settings" /> | <img src="assets/activity-log-screenshot.png" width="100%" alt="Activity Log" /> |
+
+---
+
 ## 🛠 For Developers & Compiling
 
 Want to hack on the codebase, add a feature, or build from source?  
