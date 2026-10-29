@@ -1,4 +1,5 @@
 import { useState, FormEvent } from "react";
+import packageJson from "../../package.json";
 import { AppConfig, AuthStatus, UpdateInfo } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -14,6 +15,8 @@ import {
   RefreshCw,
   ExternalLink,
 } from "lucide-react";
+
+const APP_VERSION = packageJson.version;
 
 interface SettingsModalProps {
   config: AppConfig;
@@ -376,12 +379,17 @@ export const SettingsModal = ({
                   Software Updates
                 </span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#f0f4f9] dark:bg-[#131314] text-[#747775] dark:text-[#8e918f] border border-black/[0.06] dark:border-white/[0.06]">
-                  v1.0.0
+                  v{APP_VERSION}
                 </span>
               </div>
               <p className="text-[11px] text-[#747775] dark:text-[#8e918f]">
-                {updateStatusMessage || "Check for new releases on GitHub"}
+                Mauro Druwel · MIT License
               </p>
+              {updateStatusMessage && (
+                <p className="text-[11px] text-[#1a73e8] dark:text-[#a8c7fa] pt-0.5">
+                  {updateStatusMessage}
+                </p>
+              )}
             </div>
 
             <div className="flex items-center space-x-2">

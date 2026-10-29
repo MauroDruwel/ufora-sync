@@ -85,8 +85,12 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .version(Some(env!("CARGO_PKG_VERSION")))
         .authors(Some(vec!["Mauro Druwel".to_string()]))
         .copyright(Some("Copyright © 2026 Mauro Druwel. MIT License."))
-        .comments(Some("Native background sync service for UGent Ufora"))
+        .comments(Some(
+            "Mauro Druwel — MIT License\nNative background sync service for UGent Ufora",
+        ))
         .website(Some("https://github.com/MauroDruwel/ufora-sync"))
+        .website_label(Some("GitHub Repository"))
+        .license(Some("MIT"))
         .build();
     let about_item = PredefinedMenuItem::about(app, Some("About Ufora Sync"), Some(about_meta))?;
     let sep3 = PredefinedMenuItem::separator(app)?;

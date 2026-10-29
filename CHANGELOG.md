@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-10-29
+
+### Added
+- **Native macOS Application Menu & About Panel**: Full Cocoa native About panel integration (`AboutMetadataBuilder`) with credits ("Mauro Druwel — MIT License"), authors, and version display.
+- **Semantic Versioning Comparison**: Added `is_newer_version` utility ensuring only strictly newer semantic tags on GitHub prompt update notifications, preventing older repository tags from misreporting as updates.
+- **Dynamic Relative Sync Formatting**: Header status displays live relative time ("Synced just now", "Synced 2 min ago", "Last synced HH:MM") with reactive 4-state indicator dots.
+
+### Changed
+- **Header Geometry**: Relocated status indicator chip to the top right directly next to the sync action buttons, leaving the left title bar clear for macOS window traffic lights.
+- **Streamlined Preferences & Settings**: Moved course enrollment visibility toggles (past academic years and group spaces) into Settings, keeping the main dashboard toolbar clutter-free.
+
 ## [1.0.0] - 2026-10-28
 
 ### Added

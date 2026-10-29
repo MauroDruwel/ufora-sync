@@ -45,6 +45,65 @@ pub fn run() {
                         Some(18.0),
                     );
                 }
+
+                use tauri::menu::{AboutMetadataBuilder, Menu, PredefinedMenuItem, Submenu};
+                let about_meta = AboutMetadataBuilder::new()
+                    .name(Some("Ufora Sync"))
+                    .version(Some(env!("CARGO_PKG_VERSION")))
+                    .authors(Some(vec!["Mauro Druwel".to_string()]))
+                    .copyright(Some("Copyright © 2026 Mauro Druwel. MIT License."))
+                    .comments(Some("Mauro Druwel — MIT License\nNative background sync service for UGent Ufora"))
+                    .website(Some("https://github.com/MauroDruwel/ufora-sync"))
+                    .website_label(Some("GitHub Repository"))
+                    .license(Some("MIT"))
+                    .build();
+
+                let app_sub = Submenu::with_items(
+                    app.handle(),
+                    "Ufora Sync",
+                    true,
+                    &[
+                        &PredefinedMenuItem::about(app.handle(), Some("About Ufora Sync"), Some(about_meta))?,
+                        &PredefinedMenuItem::separator(app.handle())?,
+                        &PredefinedMenuItem::services(app.handle(), None)?,
+                        &PredefinedMenuItem::separator(app.handle())?,
+                        &PredefinedMenuItem::hide(app.handle(), None)?,
+                        &PredefinedMenuItem::hide_others(app.handle(), None)?,
+                        &PredefinedMenuItem::show_all(app.handle(), None)?,
+                        &PredefinedMenuItem::separator(app.handle())?,
+                        &PredefinedMenuItem::quit(app.handle(), None)?,
+                    ],
+                )?;
+
+                let edit_sub = Submenu::with_items(
+                    app.handle(),
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(app.handle(), None)?,
+                        &PredefinedMenuItem::redo(app.handle(), None)?,
+                        &PredefinedMenuItem::separator(app.handle())?,
+                        &PredefinedMenuItem::cut(app.handle(), None)?,
+                        &PredefinedMenuItem::copy(app.handle(), None)?,
+                        &PredefinedMenuItem::paste(app.handle(), None)?,
+                        &PredefinedMenuItem::select_all(app.handle(), None)?,
+                    ],
+                )?;
+
+                let win_sub = Submenu::with_items(
+                    app.handle(),
+                    "Window",
+                    true,
+                    &[
+                        &PredefinedMenuItem::minimize(app.handle(), None)?,
+                        &PredefinedMenuItem::fullscreen(app.handle(), None)?,
+                        &PredefinedMenuItem::separator(app.handle())?,
+                        &PredefinedMenuItem::close_window(app.handle(), None)?,
+                    ],
+                )?;
+
+                let menu = Menu::with_items(app.handle(), &[&app_sub, &edit_sub, &win_sub])?;
+                let _ = app.set_menu(menu);
             }
 
             let sync_engine = Arc::new(sync::SyncEngine::new(app.handle().clone()));
