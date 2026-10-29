@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { Sparkles, RefreshCw, Settings, Folder, ExternalLink, LogIn, LogOut } from "lucide-react";
+import { Sparkles, RefreshCw, Settings, Folder, ExternalLink, LogIn } from "lucide-react";
 
 interface HeaderProps {
   status: "idle" | "syncing" | "paused" | "error";
   isAuthenticated?: boolean;
   onSyncNow: () => void;
   onLogin?: () => void;
-  onLogout?: () => void;
   onOpenSettings: () => void;
   onOpenSyncFolder: () => void;
   onOpenUforaWeb: () => void;
@@ -17,7 +16,6 @@ export const Header = ({
   isAuthenticated = true,
   onSyncNow,
   onLogin,
-  onLogout,
   onOpenSettings,
   onOpenSyncFolder,
   onOpenUforaWeb,
@@ -131,16 +129,6 @@ export const Header = ({
         >
           <Settings className="w-4 h-4" />
         </button>
-
-        {isAuthenticated && onLogout && (
-          <button
-            onClick={onLogout}
-            className="w-9 h-9 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] hover:bg-[#b3261e]/10 dark:hover:bg-[#b3261e]/20 text-[#747775] dark:text-[#8e918f] hover:text-[#b3261e] dark:hover:text-[#f2b8b5] border border-black/[0.08] dark:border-white/[0.08] flex items-center justify-center transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
-            title="Log out from UGent Ufora"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        )}
       </div>
     </header>
   );

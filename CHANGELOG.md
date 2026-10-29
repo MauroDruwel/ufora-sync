@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-10-28
 
 ### Added
+- **Course Selection Safety & Confirmation**:
+  - Replaced raw "All" and "None" toggle buttons with a batch selection popover menu (`{count} active ▾`) including Invert Selection.
+  - Added Material-style confirmation dialogs before executing "Disable All" or "Enable All" to eliminate accidental misclicks.
+  - Added two-step confirmation on the Logout button inside Settings.
 - **Course Grid View & Search Filtering**:
   - Added multi-column responsive Grid View (`LayoutGrid`) alongside classic List View (`List`), with persistent layout preference.
   - Added instant search filter for courses matching by course name, code, or ID, designed for users enrolled in many courses.

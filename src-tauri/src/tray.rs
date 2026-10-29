@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 pub const TRAY_ID: &str = "ufora-sync-main-tray";
 static TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon.png");
@@ -47,10 +47,6 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             "open_login" => {
                 let _ = crate::auth::open_login_window(app);
             }
-            "logout" => {
-                let _ = crate::auth::logout();
-                let _ = app.emit("auth-status-changed", false);
-            }
             "quit" => app.exit(0),
             _ => {}
         });
@@ -81,38 +77,51 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         true,
         None::<&str>,
     )?;
-    let auth_item = if crate::auth::read_token().is_ok() {
-        MenuItem::with_id(app, "logout", "🚪 Log out from UGent", true, None::<&str>)?
-    } else {
-        MenuItem::with_id(
-            app,
-            "open_login",
-            "🔑 Log in to UGent Ufora…",
-            true,
-            None::<&str>,
-        )?
-    };
     let sep2 = PredefinedMenuItem::separator(app)?;
     let settings_item =
         MenuItem::with_id(app, "show", "⚙️ Settings & Courses…", true, None::<&str>)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "❌ Quit Ufora Sync", true, None::<&str>)?;
 
-    Menu::with_items(
-        app,
-        &[
-            &status_item,
-            &sep1,
-            &sync_item,
-            &auth_item,
-            &open_folder,
-            &open_ufora,
-            &sep2,
-            &settings_item,
-            &sep3,
-            &quit_item,
-        ],
-    )
+    if crate::auth::read_token().is_err() {
+        let login_item = MenuItem::with_id(
+            app,
+            "open_login",
+            "🔑 Log in to UGent Ufora…",
+            true,
+            None::<&str>,
+        )?;
+        Menu::with_items(
+            app,
+            &[
+                &status_item,
+                &sep1,
+                &sync_item,
+                &login_item,
+                &open_folder,
+                &open_ufora,
+                &sep2,
+                &settings_item,
+                &sep3,
+                &quit_item,
+            ],
+        )
+    } else {
+        Menu::with_items(
+            app,
+            &[
+                &status_item,
+                &sep1,
+                &sync_item,
+                &open_folder,
+                &open_ufora,
+                &sep2,
+                &settings_item,
+                &sep3,
+                &quit_item,
+            ],
+        )
+    }
 }
 
 pub fn show_main(app: &AppHandle) {

@@ -32,6 +32,7 @@ export const SettingsModal = ({
   const [autostart, setAutostart] = useState(config.auto_start_tray);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   if (!isOpen) return null;
 
@@ -135,14 +136,37 @@ export const SettingsModal = ({
                 {authStatus.is_authenticated ? "Connected" : "Disconnected"}
               </span>
               {authStatus.is_authenticated && onLogout ? (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="flex items-center space-x-1 px-3 py-1 bg-[#b3261e]/10 hover:bg-[#b3261e]/20 text-[#b3261e] dark:text-[#f2b8b5] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
-                >
-                  <LogOut className="w-3 h-3" />
-                  <span>Log Out</span>
-                </button>
+                confirmingLogout ? (
+                  <div className="flex items-center space-x-1.5 animate-in fade-in duration-150">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmingLogout(false);
+                        onLogout();
+                      }}
+                      className="flex items-center space-x-1 px-3 py-1 bg-[#b3261e] hover:bg-[#8c1d18] text-white font-medium rounded-full text-xs transition duration-150 active:scale-[0.96]"
+                    >
+                      <LogOut className="w-3 h-3" />
+                      <span>Confirm Log Out</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingLogout(false)}
+                      className="px-2.5 py-1 text-xs text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] rounded-full transition duration-150"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingLogout(true)}
+                    className="flex items-center space-x-1 px-3 py-1 bg-[#b3261e]/10 hover:bg-[#b3261e]/20 text-[#b3261e] dark:text-[#f2b8b5] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
+                  >
+                    <LogOut className="w-3 h-3" />
+                    <span>Log Out</span>
+                  </button>
+                )
               ) : !authStatus.is_authenticated && onLogin ? (
                 <button
                   type="button"
