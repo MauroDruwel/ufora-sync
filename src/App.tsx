@@ -31,6 +31,8 @@ interface ConfirmDialogState {
   action: () => Promise<void>;
 }
 
+type CourseCategory = "current" | "all_courses" | "groups" | "all";
+
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -43,6 +45,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoadingCourses, setIsLoadingCourses] = useState(true);
   const [activeTab, setActiveTab] = useState<"courses" | "logs">("courses");
+  const [courseCategory, setCourseCategory] = useState<CourseCategory>("current");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSelectionMenuOpen, setIsSelectionMenuOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
@@ -113,16 +116,29 @@ export default function App() {
       setLogs((prev) => [...prev, `[${event.payload.timestamp}] ${event.payload.message}`]);
     });
 
-    const unlistenStatus = listen<string>("sync-status", (event) => {
+    const unlistenStatus = listen<string>("sync-status", async (event) => {
       const s = event.payload.toLowerCase();
       if (s === "syncing") setSyncStatus("syncing");
       else if (s === "paused") setSyncStatus("paused");
       else if (s === "error") setSyncStatus("error");
       else setSyncStatus("idle");
+
+      try {
+        const updatedConfig: AppConfig = await invoke("get_config");
+        setConfig(updatedConfig);
+      } catch (e) {
+        console.error("Failed to reload config on status update:", e);
+      }
     });
 
-    const unlistenComplete = listen<SyncSummary>("sync-complete", (_event) => {
+    const unlistenComplete = listen<SyncSummary>("sync-complete", async (_event) => {
       setSyncStatus("idle");
+      try {
+        const updatedConfig: AppConfig = await invoke("get_config");
+        setConfig(updatedConfig);
+      } catch (e) {
+        console.error("Failed to reload config on sync complete:", e);
+      }
     });
 
     const unlistenAuth = listen<boolean>("auth-status-changed", async (_event) => {
@@ -152,6 +168,41 @@ export default function App() {
     };
   }, []);
 
+  const currentAcademicYear = (() => {
+    const now = new Date();
+    // UGent academic year starts in September (month 8, 0-indexed)
+    return now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+  })();
+
+  const currentCourses = courses.filter(
+    (c) => c.is_course_offering !== false && (c.academic_year === currentAcademicYear || !c.academic_year)
+  );
+  const allCourseOfferings = courses.filter((c) => c.is_course_offering !== false);
+  const groupCourses = courses.filter((c) => c.is_course_offering === false);
+
+  const categoryFilteredCourses = courses.filter((c) => {
+    if (courseCategory === "current") {
+      return c.is_course_offering !== false && (c.academic_year === currentAcademicYear || !c.academic_year);
+    }
+    if (courseCategory === "all_courses") {
+      return c.is_course_offering !== false;
+    }
+    if (courseCategory === "groups") {
+      return c.is_course_offering === false;
+    }
+    return true;
+  });
+
+  const filteredCourses = categoryFilteredCourses.filter((c) => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q)
+    );
+  });
+
   const handleToggleCourse = async (courseId: string, enabled: boolean) => {
     if (!config) return;
     const set = new Set(config.enabled_courses);
@@ -165,49 +216,60 @@ export default function App() {
     await invoke("save_config", { newCfg: updated });
   };
 
-  const handleSelectAll = async (enable: boolean) => {
+  const handleSelectVisible = async (enable: boolean) => {
     if (!config) return;
-    const updated = {
-      ...config,
-      enabled_courses: enable ? courses.map((c) => c.id) : [],
-    };
+    const set = new Set(config.enabled_courses);
+    for (const c of filteredCourses) {
+      if (enable) {
+        set.add(c.id);
+      } else {
+        set.delete(c.id);
+      }
+    }
+    const updated = { ...config, enabled_courses: Array.from(set) };
     setConfig(updated);
     await invoke("save_config", { newCfg: updated });
   };
 
-  const handleInvertSelection = async () => {
+  const handleInvertVisible = async () => {
     if (!config) return;
     const currentSet = new Set(config.enabled_courses);
-    const inverted = courses
-      .filter((c) => !currentSet.has(c.id))
-      .map((c) => c.id);
-    const updated = { ...config, enabled_courses: inverted };
+    for (const c of filteredCourses) {
+      if (currentSet.has(c.id)) {
+        currentSet.delete(c.id);
+      } else {
+        currentSet.add(c.id);
+      }
+    }
+    const updated = { ...config, enabled_courses: Array.from(currentSet) };
     setConfig(updated);
     await invoke("save_config", { newCfg: updated });
   };
 
-  const promptSelectAll = () => {
+  const promptSelectVisible = () => {
+    const count = filteredCourses.length;
     setConfirmDialog({
       isOpen: true,
-      title: "Enable all courses?",
-      message: `Are you sure you want to enable background synchronization for all ${courses.length} courses?`,
-      confirmText: "Enable All",
+      title: "Enable visible items?",
+      message: `Are you sure you want to enable background synchronization for ${count} visible course(s)?`,
+      confirmText: `Enable ${count} Items`,
       variant: "primary",
       action: async () => {
-        await handleSelectAll(true);
+        await handleSelectVisible(true);
       },
     });
   };
 
-  const promptDeselectAll = () => {
+  const promptDeselectVisible = () => {
+    const count = filteredCourses.length;
     setConfirmDialog({
       isOpen: true,
-      title: "Disable all courses?",
-      message: `Are you sure you want to disable synchronization for all ${courses.length} courses? No local files will be deleted, but background syncing will pause for all courses.`,
-      confirmText: "Disable All",
+      title: "Disable visible items?",
+      message: `Are you sure you want to disable synchronization for ${count} visible course(s)? No local files will be deleted.`,
+      confirmText: `Disable ${count} Items`,
       variant: "danger",
       action: async () => {
-        await handleSelectAll(false);
+        await handleSelectVisible(false);
       },
     });
   };
@@ -282,23 +344,17 @@ export default function App() {
     );
   }
 
-  const enabledCount = courses.filter((c) => config.enabled_courses.includes(c.id)).length;
-
-  const filteredCourses = courses.filter((c) => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      c.name.toLowerCase().includes(q) ||
-      c.code.toLowerCase().includes(q) ||
-      c.id.toLowerCase().includes(q)
-    );
-  });
+  const enabledVisibleCount = filteredCourses.filter((c) =>
+    config.enabled_courses.length === 0 || config.enabled_courses.includes(c.id)
+  ).length;
 
   return (
     <div className="flex flex-col h-screen bg-[#ffffff] dark:bg-[#131314] text-[#1f1f1f] dark:text-[#e3e3e3] font-sans select-none overflow-hidden transition-colors duration-150">
-      {/* Top Header with traffic light safe area */}
+      {/* Top Header with traffic light safe area & dynamic status */}
       <Header
         status={syncStatus}
+        lastSyncTime={config.last_sync_time}
+        lastSyncStatus={config.last_sync_status}
         isAuthenticated={authStatus.is_authenticated}
         onSyncNow={handleSyncNow}
         onLogin={handleOpenLogin}
@@ -309,30 +365,74 @@ export default function App() {
 
       {/* Tabs & Controls */}
       <div className="flex items-center justify-between px-6 py-2.5 border-b border-black/[0.08] dark:border-white/[0.08] bg-[#ffffff] dark:bg-[#131314] transition-colors duration-150">
-        <div className="flex items-center space-x-1.5">
-          <button
-            onClick={() => setActiveTab("courses")}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
-              activeTab === "courses"
-                ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
-                : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
-            }`}
-          >
-            Courses ({courses.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("logs")}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] flex items-center space-x-2 ${
-              activeTab === "logs"
-                ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
-                : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
-            }`}
-          >
-            <span>Activity Log</span>
-            {syncStatus === "syncing" && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[#1a73e8] dark:bg-[#a8c7fa] animate-ping" />
-            )}
-          </button>
+        <div className="flex items-center space-x-3">
+          {/* Main View Tabs */}
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={() => setActiveTab("courses")}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
+                activeTab === "courses"
+                  ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
+                  : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
+              }`}
+            >
+              Courses
+            </button>
+            <button
+              onClick={() => setActiveTab("logs")}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] flex items-center space-x-2 ${
+                activeTab === "logs"
+                  ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
+                  : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#1e1f20]"
+              }`}
+            >
+              <span>Activity Log</span>
+              {syncStatus === "syncing" && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[#1a73e8] dark:bg-[#a8c7fa] animate-ping" />
+              )}
+            </button>
+          </div>
+
+          {/* Academic Year & Category Filter Pills (Filters out 60 past years and group placeholders) */}
+          {activeTab === "courses" && courses.length > 0 && (
+            <div className="flex items-center p-0.5 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-xs">
+              <button
+                onClick={() => setCourseCategory("current")}
+                className={`px-3 py-1 rounded-full font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
+                  courseCategory === "current"
+                    ? "bg-[#ffffff] dark:bg-[#282a2c] text-[#1a73e8] dark:text-[#a8c7fa] shadow-sm"
+                    : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
+                }`}
+                title="Active courses for current academic year (2026-2027)"
+              >
+                Current ({currentCourses.length})
+              </button>
+              <button
+                onClick={() => setCourseCategory("all_courses")}
+                className={`px-3 py-1 rounded-full font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
+                  courseCategory === "all_courses"
+                    ? "bg-[#ffffff] dark:bg-[#282a2c] text-[#1a73e8] dark:text-[#a8c7fa] shadow-sm"
+                    : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
+                }`}
+                title="All course offerings including past academic years"
+              >
+                All Courses ({allCourseOfferings.length})
+              </button>
+              {groupCourses.length > 0 && (
+                <button
+                  onClick={() => setCourseCategory("groups")}
+                  className={`px-3 py-1 rounded-full font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
+                    courseCategory === "groups"
+                      ? "bg-[#ffffff] dark:bg-[#282a2c] text-[#1a73e8] dark:text-[#a8c7fa] shadow-sm"
+                      : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
+                  }`}
+                  title="Project groups and organizational units"
+                >
+                  Groups ({groupCourses.length})
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {activeTab === "courses" && courses.length > 0 && (
@@ -393,8 +493,8 @@ export default function App() {
               >
                 <SlidersHorizontal className="w-3.5 h-3.5 text-[#1a73e8] dark:text-[#a8c7fa]" />
                 <span>
-                  <strong className="text-[#1f1f1f] dark:text-[#e3e3e3] font-medium">{enabledCount}</strong>/
-                  {courses.length} active
+                  <strong className="text-[#1f1f1f] dark:text-[#e3e3e3] font-medium">{enabledVisibleCount}</strong>/
+                  {filteredCourses.length} active
                 </span>
                 <ChevronDown className="w-3 h-3 text-[#747775] dark:text-[#8e918f]" />
               </button>
@@ -410,33 +510,33 @@ export default function App() {
                     <button
                       onClick={() => {
                         setIsSelectionMenuOpen(false);
-                        promptSelectAll();
+                        promptSelectVisible();
                       }}
                       className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-left text-[#1f1f1f] dark:text-[#e3e3e3] hover:bg-[#f0f4f9] dark:hover:bg-[#282a2c] transition duration-150"
                     >
                       <CheckSquare className="w-4 h-4 text-[#1a73e8] dark:text-[#a8c7fa]" />
-                      <span>Enable All ({courses.length})</span>
+                      <span>Enable Visible ({filteredCourses.length})</span>
                     </button>
                     <button
                       onClick={() => {
                         setIsSelectionMenuOpen(false);
-                        promptDeselectAll();
+                        promptDeselectVisible();
                       }}
                       className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-left text-[#b3261e] dark:text-[#f2b8b5] hover:bg-[#b3261e]/10 dark:hover:bg-[#b3261e]/15 transition duration-150"
                     >
                       <Square className="w-4 h-4" />
-                      <span>Disable All</span>
+                      <span>Disable Visible</span>
                     </button>
                     <div className="my-1 border-t border-black/[0.06] dark:border-white/[0.06]" />
                     <button
                       onClick={() => {
                         setIsSelectionMenuOpen(false);
-                        handleInvertSelection();
+                        handleInvertVisible();
                       }}
                       className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-left text-[#444746] dark:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#282a2c] transition duration-150"
                     >
                       <ArrowLeftRight className="w-4 h-4 text-[#747775] dark:text-[#8e918f]" />
-                      <span>Invert Selection</span>
+                      <span>Invert Visible</span>
                     </button>
                   </div>
                 </>
@@ -498,15 +598,27 @@ export default function App() {
                     No matching courses
                   </span>
                   <span className="text-xs text-[#747775] dark:text-[#8e918f] block">
-                    No courses match "{searchQuery}".
+                    No courses match "{searchQuery}" in this view.
                   </span>
                 </div>
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#ffffff] dark:bg-[#282a2c] hover:bg-[#e9eef6] dark:hover:bg-[#37393b] text-[#1a73e8] dark:text-[#a8c7fa] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 active:scale-[0.96]"
-                >
-                  Clear search
-                </button>
+                <div className="flex items-center space-x-2">
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#ffffff] dark:bg-[#282a2c] hover:bg-[#e9eef6] dark:hover:bg-[#37393b] text-[#1a73e8] dark:text-[#a8c7fa] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 active:scale-[0.96]"
+                    >
+                      Clear search
+                    </button>
+                  )}
+                  {courseCategory !== "all_courses" && (
+                    <button
+                      onClick={() => setCourseCategory("all_courses")}
+                      className="px-3.5 py-1.5 rounded-full text-xs font-medium bg-[#ffffff] dark:bg-[#282a2c] hover:bg-[#e9eef6] dark:hover:bg-[#37393b] text-[#444746] dark:text-[#c4c7c5] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 active:scale-[0.96]"
+                    >
+                      View All Courses
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div

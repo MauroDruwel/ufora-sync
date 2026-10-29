@@ -135,3 +135,92 @@ pub fn open_course_folder(folder_name: String) -> Result<(), String> {
 pub fn open_url(url: String) -> Result<(), String> {
     open::that(&url).map_err(|e| format!("Failed to open link: {e}"))
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateInfo {
+    pub current_version: String,
+    pub latest_version: String,
+    pub has_update: bool,
+    pub release_notes: Option<String>,
+    pub html_url: String,
+    pub published_at: Option<String>,
+}
+
+#[tauri::command]
+pub async fn check_for_updates() -> Result<UpdateInfo, String> {
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let client = reqwest::Client::builder()
+        .user_agent(format!("ufora-sync/{}", current_version))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client
+        .get("https://api.github.com/repos/MauroDruwel/ufora-sync/releases/latest")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to reach GitHub: {e}"))?;
+
+    if !res.status().is_success() {
+        return Ok(UpdateInfo {
+            current_version: current_version.clone(),
+            latest_version: current_version,
+            has_update: false,
+            release_notes: None,
+            html_url: "https://github.com/MauroDruwel/ufora-sync/releases".to_string(),
+            published_at: None,
+        });
+    }
+
+    let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    let raw_tag = json.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
+    let tag = raw_tag.trim_start_matches('v').to_string();
+    let html_url = json
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("https://github.com/MauroDruwel/ufora-sync/releases")
+        .to_string();
+    let release_notes = json
+        .get("body")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let published_at = json
+        .get("published_at")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let has_update = !tag.is_empty() && tag != current_version;
+
+    Ok(UpdateInfo {
+        current_version,
+        latest_version: if tag.is_empty() {
+            env!("CARGO_PKG_VERSION").to_string()
+        } else {
+            tag
+        },
+        has_update,
+        release_notes,
+        html_url,
+        published_at,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_update_info_serialization() {
+        let info = UpdateInfo {
+            current_version: "1.0.0".to_string(),
+            latest_version: "1.0.1".to_string(),
+            has_update: true,
+            release_notes: Some("Fixes and enhancements".to_string()),
+            html_url: "https://github.com/MauroDruwel/ufora-sync/releases/v1.0.1".to_string(),
+            published_at: Some("2026-10-29T10:00:00Z".to_string()),
+        };
+
+        let json = serde_json::to_string(&info).expect("Failed to serialize");
+        assert!(json.contains("\"has_update\":true"));
+        assert!(json.contains("\"latest_version\":\"1.0.1\""));
+    }
+}

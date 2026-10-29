@@ -1,4 +1,5 @@
 use crate::sanitize;
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 
 const UFORA_HOST: &str = "https://ufora.ugent.be";
@@ -11,6 +12,47 @@ pub struct Course {
     pub code: String,
     pub home_url: String,
     pub folder_name: String,
+    #[serde(default = "default_true")]
+    pub is_course_offering: bool,
+    #[serde(default)]
+    pub academic_year: Option<i32>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+pub fn is_course_offering(org: &serde_json::Value) -> bool {
+    if let Some(t) = org.get("Type") {
+        let code = t.get("Code").and_then(|v| v.as_str()).unwrap_or("");
+        let name = t.get("Name").and_then(|v| v.as_str()).unwrap_or("");
+        code == "Course Offering" || name == "Course Offering" || name == "Cursuseditie"
+    } else {
+        true
+    }
+}
+
+pub fn extract_academic_year(code: &str) -> Option<i32> {
+    if let Some(idx) = code.rfind('_') {
+        let suffix = &code[idx + 1..];
+        if suffix.len() == 4 && (suffix.starts_with("20") || suffix.starts_with("19")) {
+            if let Ok(y) = suffix.parse::<i32>() {
+                return Some(y);
+            }
+        }
+    }
+    None
+}
+
+pub fn current_academic_year() -> i32 {
+    let now = chrono::Local::now();
+    let year = now.year();
+    let month = now.month();
+    if month >= 9 {
+        year
+    } else {
+        year - 1
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +142,8 @@ pub async fn fetch_enrolled_courses(token: &str) -> Result<Vec<Course>, String> 
                 .to_string();
 
             if !id.is_empty() && !name.is_empty() {
+                let is_offering = is_course_offering(org);
+                let academic_year = extract_academic_year(&code);
                 let folder_name = sanitize::sanitize_folder_name(&name);
                 courses.push(Course {
                     id,
@@ -107,6 +151,8 @@ pub async fn fetch_enrolled_courses(token: &str) -> Result<Vec<Course>, String> 
                     code,
                     home_url,
                     folder_name,
+                    is_course_offering: is_offering,
+                    academic_year,
                 });
             }
         }
@@ -164,4 +210,41 @@ pub async fn download_topic_file(
         bytes: bytes.to_vec(),
         filename: disposition,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_course_offering() {
+        let offering = serde_json::json!({
+            "Type": { "Id": 3, "Code": "Course Offering", "Name": "Course Offering" }
+        });
+        assert!(is_course_offering(&offering));
+
+        let dutch_offering = serde_json::json!({
+            "Type": { "Id": 3, "Code": "Course Offering", "Name": "Cursuseditie" }
+        });
+        assert!(is_course_offering(&dutch_offering));
+
+        let group = serde_json::json!({
+            "Type": { "Id": 4, "Code": "Group", "Name": "Groep" }
+        });
+        assert!(!is_course_offering(&group));
+    }
+
+    #[test]
+    fn test_extract_academic_year() {
+        assert_eq!(extract_academic_year("E610004A_2026"), Some(2026));
+        assert_eq!(extract_academic_year("E610014A_2025"), Some(2025));
+        assert_eq!(extract_academic_year("E610004A"), None);
+        assert_eq!(extract_academic_year("GR01_GROEP12"), None);
+    }
+
+    #[test]
+    fn test_current_academic_year() {
+        let year = current_academic_year();
+        assert!((2024..=2030).contains(&year));
+    }
 }

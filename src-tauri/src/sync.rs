@@ -1,6 +1,6 @@
 use crate::api;
 use crate::auth;
-use crate::config::{get_config_dir, AppConfig};
+use crate::config::{self, get_config_dir, AppConfig};
 use crate::manifest::{self, SyncManifest};
 use crate::sanitize;
 use chrono::Utc;
@@ -338,6 +338,9 @@ impl SyncEngine {
             Err(e) => {
                 let _ = auth::trigger_silent_refresh(&self.app_handle);
                 self.log(&format!("✗ Auth error: {e}"));
+                let mut cfg = config::load_config();
+                cfg.last_sync_status = Some("error".to_string());
+                let _ = config::save_config(&cfg);
                 self.is_running.store(false, Ordering::SeqCst);
                 let _ = self.app_handle.emit("sync-status", "error");
                 return Err(e);
@@ -409,6 +412,16 @@ impl SyncEngine {
             up_to_date: total_up_to_date,
             errors: total_errors,
         };
+
+        // Persist last sync time and status
+        let mut cfg = config::load_config();
+        cfg.last_sync_time = Some(chrono::Utc::now().to_rfc3339());
+        cfg.last_sync_status = Some(if summary.errors > 0 {
+            "warning".to_string()
+        } else {
+            "success".to_string()
+        });
+        let _ = config::save_config(&cfg);
 
         self.log(&format!(
             "Sync complete: {} downloaded/updated, {} up to date, {} errors.",

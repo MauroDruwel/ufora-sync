@@ -4,6 +4,8 @@ export interface Course {
   code: string;
   home_url: string;
   folder_name: string;
+  is_course_offering?: boolean;
+  academic_year?: number | null;
 }
 
 export interface AppConfig {
@@ -34,4 +36,13 @@ export interface SyncSummary {
 export interface LogMessage {
   timestamp: string;
   message: string;
+}
+
+export interface UpdateInfo {
+  current_version: string;
+  latest_version: string;
+  has_update: boolean;
+  release_notes?: string | null;
+  html_url: string;
+  published_at?: string | null;
 }

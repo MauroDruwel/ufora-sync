@@ -1,8 +1,21 @@
 import { useState, FormEvent } from "react";
-import { AppConfig, AuthStatus } from "../types";
+import { AppConfig, AuthStatus, UpdateInfo } from "../types";
+import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { enable as enableAutostart, disable as disableAutostart } from "@tauri-apps/plugin-autostart";
-import { X, Folder, Check, ShieldCheck, AlertCircle, LogIn, LogOut } from "lucide-react";
+import {
+  X,
+  Folder,
+  Check,
+  ShieldCheck,
+  AlertCircle,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  ArrowUpCircle,
+  ExternalLink,
+  Info,
+} from "lucide-react";
 
 interface SettingsModalProps {
   config: AppConfig;
@@ -34,6 +47,10 @@ export const SettingsModal = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
 
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateCheckMessage, setUpdateCheckMessage] = useState<string | null>(null);
+
   if (!isOpen) return null;
 
   const handlePickFolder = async () => {
@@ -48,6 +65,23 @@ export const SettingsModal = ({
       }
     } catch (err) {
       console.error("Failed to open dialog:", err);
+    }
+  };
+
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateCheckMessage(null);
+    try {
+      const info: UpdateInfo = await invoke("check_for_updates");
+      setUpdateInfo(info);
+      if (!info.has_update) {
+        setUpdateCheckMessage(`Ufora Sync is up to date (v${info.current_version})`);
+      }
+    } catch (err) {
+      console.error("Failed to check for updates:", err);
+      setUpdateCheckMessage("Unable to connect to GitHub releases.");
+    } finally {
+      setIsCheckingUpdate(false);
     }
   };
 
@@ -282,6 +316,68 @@ export const SettingsModal = ({
                 Launch Ufora Sync automatically when logging into computer
               </span>
             </label>
+          </div>
+
+          {/* About & Updates Card */}
+          <div className="p-4 rounded-2xl bg-[#f0f4f9] dark:bg-[#131314] border border-black/[0.06] dark:border-white/[0.06] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <img
+                  src="/app-logo.png"
+                  alt="Ufora Sync"
+                  className="w-9 h-9 rounded-xl shadow-sm shrink-0 object-cover"
+                />
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-medium text-xs text-[#1f1f1f] dark:text-[#e3e3e3]">
+                      Ufora Sync
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#ffffff] dark:bg-[#1e1f20] text-[#444746] dark:text-[#c4c7c5] border border-black/[0.08] dark:border-white/[0.08]">
+                      v1.0.0
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#747775] dark:text-[#8e918f]">
+                    By Mauro Druwel · MIT License
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCheckUpdates}
+                disabled={isCheckingUpdate}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#ffffff] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 active:scale-[0.96]"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 text-[#1a73e8] dark:text-[#a8c7fa] ${
+                    isCheckingUpdate ? "animate-spin" : ""
+                  }`}
+                />
+                <span>{isCheckingUpdate ? "Checking…" : "Check for Updates"}</span>
+              </button>
+            </div>
+
+            {updateInfo?.has_update ? (
+              <div className="p-3 rounded-xl bg-[#1a73e8]/10 dark:bg-[#a8c7fa]/10 border border-[#1a73e8]/20 flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-xs text-[#1a73e8] dark:text-[#a8c7fa]">
+                  <ArrowUpCircle className="w-4 h-4 shrink-0" />
+                  <span>Update available: v{updateInfo.latest_version}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => invoke("open_url", { url: updateInfo.html_url })}
+                  className="flex items-center space-x-1 px-3 py-1 bg-[#1a73e8] dark:bg-[#a8c7fa] text-white dark:text-[#062e6f] font-medium rounded-full text-xs transition active:scale-[0.96]"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>View Release</span>
+                </button>
+              </div>
+            ) : updateCheckMessage ? (
+              <p className="text-[11px] text-[#747775] dark:text-[#8e918f] flex items-center space-x-1.5">
+                <Info className="w-3.5 h-3.5 text-[#188038] dark:text-[#6dd58c]" />
+                <span>{updateCheckMessage}</span>
+              </p>
+            ) : null}
           </div>
 
           {/* Footer */}

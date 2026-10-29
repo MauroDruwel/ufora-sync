@@ -89,6 +89,7 @@ pub fn run() {
             commands::open_folder,
             commands::open_course_folder,
             commands::open_url,
+            commands::check_for_updates,
         ])
         .build(tauri::generate_context!())
         .expect("error while building ufora-sync application");
