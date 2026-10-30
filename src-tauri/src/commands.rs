@@ -105,7 +105,10 @@ pub fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, Strin
 }
 
 #[tauri::command]
-pub fn sync_now(engine: State<'_, Arc<SyncEngine>>) -> Result<(), String> {
+pub fn sync_now(app: tauri::AppHandle, engine: State<'_, Arc<SyncEngine>>) -> Result<(), String> {
+    if !auth::is_authenticated_and_valid(180.0) {
+        let _ = auth::open_login_window(&app);
+    }
     let engine_clone = Arc::clone(&engine);
     tauri::async_runtime::spawn(async move {
         let cfg = config::load_config();

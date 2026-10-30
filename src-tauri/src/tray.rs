@@ -31,6 +31,9 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             "sync_now" => {
                 let handle = app.clone();
                 tauri::async_runtime::spawn(async move {
+                    if !crate::auth::is_authenticated_and_valid(180.0) {
+                        let _ = crate::auth::open_login_window(&handle);
+                    }
                     if let Some(engine) = handle.try_state::<Arc<crate::sync::SyncEngine>>() {
                         let cfg = crate::config::load_config();
                         let _ = engine.run_sync_pass(&cfg).await;
@@ -75,7 +78,33 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let status_item = MenuItem::with_id(app, "status", "● Ufora Sync — Idle", false, None::<&str>)?;
+    let is_auth = crate::auth::is_authenticated_and_valid(180.0);
+    let engine = app.try_state::<Arc<crate::sync::SyncEngine>>();
+    let is_syncing = engine
+        .as_ref()
+        .map(|e| e.is_running.load(std::sync::atomic::Ordering::SeqCst))
+        .unwrap_or(false);
+
+    let status_str = if is_syncing {
+        "🔄 Ufora Sync — Syncing…".to_string()
+    } else if !is_auth {
+        "⚠️ Ufora Sync — Sign-in Required".to_string()
+    } else {
+        let cfg = crate::config::load_config();
+        if let Some(ref t) = cfg.last_sync_time {
+            let parsed = chrono::DateTime::parse_from_rfc3339(t).ok();
+            if let Some(dt) = parsed {
+                let local_time = dt.with_timezone(&chrono::Local);
+                format!("● Ufora Sync — Up to date ({})", local_time.format("%H:%M"))
+            } else {
+                "● Ufora Sync — Up to date".to_string()
+            }
+        } else {
+            "● Ufora Sync — Ready".to_string()
+        }
+    };
+
+    let status_item = MenuItem::with_id(app, "status", status_str, false, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sync_item = MenuItem::with_id(app, "sync_now", "🔄 Sync Now", true, None::<&str>)?;
     let open_folder = MenuItem::with_id(
@@ -125,11 +154,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let sep3 = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "❌ Quit Ufora Sync", true, None::<&str>)?;
 
-    if crate::auth::read_token().is_err() {
+    if !is_auth {
         let login_item = MenuItem::with_id(
             app,
             "open_login",
-            "🔑 Log in to UGent Ufora…",
+            "🔑 Sign in to UGent Ufora…",
             true,
             None::<&str>,
         )?;
@@ -138,8 +167,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &[
                 &status_item,
                 &sep1,
-                &sync_item,
                 &login_item,
+                &sync_item,
                 &open_folder,
                 &open_ufora,
                 &sep2,

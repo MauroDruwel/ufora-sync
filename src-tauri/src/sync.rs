@@ -331,6 +331,7 @@ impl SyncEngine {
         }
 
         let _ = self.app_handle.emit("sync-status", "syncing");
+        let _ = crate::tray::update_tray_menu(&self.app_handle);
         self.log("Starting Ufora sync pass…");
 
         let token = match auth::ensure_valid_token(&self.app_handle, 180.0).await {
@@ -342,6 +343,8 @@ impl SyncEngine {
                 let _ = config::save_config(&cfg);
                 self.is_running.store(false, Ordering::SeqCst);
                 let _ = self.app_handle.emit("sync-status", "error");
+                let _ = self.app_handle.emit("auth-status-changed", false);
+                let _ = crate::tray::update_tray_menu(&self.app_handle);
                 return Err(e);
             }
         };
@@ -428,6 +431,7 @@ impl SyncEngine {
         ));
         let _ = self.app_handle.emit("sync-status", "idle");
         let _ = self.app_handle.emit("sync-complete", &summary);
+        let _ = crate::tray::update_tray_menu(&self.app_handle);
 
         Ok(summary)
     }

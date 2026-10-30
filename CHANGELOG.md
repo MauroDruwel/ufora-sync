@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-10-30
+
+### Fixed
+- **Synchronized Sync & Re-Authentication Actions**:
+  - Unified the desktop window and menu bar tray "Sync Now" buttons so both reliably detect expired sessions and seamlessly launch the SSO re-authentication flow instead of silently failing with unhandled auth errors.
+  - Clicking "Sync Now" or the status indicator pill when authentication has expired now opens the UGent SSO login window directly, rather than waiting 53 seconds in a blocked state.
+  - Automatically refreshes the enrolled courses list whenever a manual sync pass is triggered.
+  - Fixed out-of-sync auth status in the desktop UI and system tray: auth failure events (`auth-status-changed: false`) now immediately update the Header and show a prominent "Log in with UGent" button.
+  - Added live status updates and dedicated "Sign in to UGent Ufora" action to the macOS menu bar and system tray menu whenever re-authentication is required.
+- **Robust Microsoft Entra ID & UGent SSO Helper**:
+  - Enhanced the auto-auth script to dispatch synthetic mouse events (`MouseEvent` + `click`) across Knockout.js and React containers on Microsoft SSO.
+  - Token extraction now strictly validates JWT `exp > now + 60`, preventing stale expired tokens in `localStorage` from being mistakenly captured.
+  - Intercepts all live in-page network requests for immediate Bearer token capture.
+  - Fixed macOS WebKit background window throttling by transitioning from silent refresh to visible focused window within 4 seconds, bringing the window to the front and focusing it cleanly.
+
 ## [1.0.4] - 2026-10-30
 
 ### Added

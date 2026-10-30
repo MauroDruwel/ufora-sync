@@ -80,8 +80,17 @@ export const Header = ({
       <div className="flex items-center space-x-2.5">
         {/* Dynamic Status Pill */}
         <div
-          className="flex items-center space-x-2 px-3 py-1 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-xs font-medium text-[#444746] dark:text-[#c4c7c5] transition-colors duration-150"
-          title={statusLabel}
+          onClick={(!isAuthenticated || status === "error") && onLogin ? onLogin : undefined}
+          className={`flex items-center space-x-2 px-3 py-1 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-xs font-medium text-[#444746] dark:text-[#c4c7c5] transition-colors duration-150 ${
+            (!isAuthenticated || status === "error") && onLogin
+              ? "cursor-pointer hover:bg-[#e9eef6] dark:hover:bg-[#282a2c]"
+              : ""
+          }`}
+          title={
+            (!isAuthenticated || status === "error") && onLogin
+              ? `${statusLabel} — Click to sign in`
+              : statusLabel
+          }
         >
           <span className={`w-2 h-2 rounded-full shrink-0 transition-colors duration-200 ${dotColor}`} />
           <span className="tracking-tight">{statusLabel}</span>

@@ -152,12 +152,12 @@ pub fn run() {
             let app_keepalive = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop {
-                    tokio::time::sleep(Duration::from_secs(600)).await;
+                    tokio::time::sleep(Duration::from_secs(300)).await;
                     if let Ok(token) = auth::read_token() {
                         if let Some(exp) = token.exp {
                             let now = chrono::Utc::now().timestamp() as f64;
-                            if now + 1200.0 >= exp {
-                                let _ = auth::trigger_silent_refresh(&app_keepalive);
+                            if now + 900.0 >= exp {
+                                let _ = auth::ensure_valid_token(&app_keepalive, 180.0).await;
                             }
                         }
                     }

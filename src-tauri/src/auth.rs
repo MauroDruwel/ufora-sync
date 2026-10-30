@@ -13,26 +13,60 @@ pub const SILENT_REFRESH_LABEL: &str = "ufora-silent-refresh";
 
 const AUTO_AUTH_AND_TOKEN_SCRIPT: &str = r##"
 (function() {
+    function parseJwtExp(jwt) {
+        try {
+            const parts = jwt.split('.');
+            if (parts.length < 2) return 0;
+            const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            const json = atob(b64);
+            const payload = JSON.parse(json);
+            return Number(payload.exp || 0);
+        } catch (_) {
+            return 0;
+        }
+    }
+
+    function triggerClick(el) {
+        if (!el) return;
+        try {
+            el.focus();
+        } catch (_) {}
+        try {
+            const opts = { bubbles: true, cancelable: true, view: window };
+            el.dispatchEvent(new MouseEvent('mousedown', opts));
+            el.dispatchEvent(new MouseEvent('mouseup', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
+        } catch (_) {}
+        try {
+            el.click();
+        } catch (_) {}
+    }
+
     function tryAuth() {
         try {
             const host = window.location.hostname || "";
             const href = window.location.href || "";
+            const nowSec = Date.now() / 1000;
 
             // 1. Microsoft Entra SSO (login.microsoftonline.com / login.microsoft.com)
             if (host.includes("microsoftonline.com") || host.includes("microsoft.com")) {
                 // Auto-click saved UGent account tile if presented with account picker
                 const tile = document.querySelector(
-                    "[data-test-id*='ugent'], [data-test-id*='@UGent.be'], [data-test-id*='@ugent.be'], .tile [role='button']:not(#otherTile), div[data-report-value='Email_Picker_Tile'], table.tile"
+                    "[data-test-id*='ugent'], [data-test-id*='@UGent.be'], [data-test-id*='@ugent.be'], .tile [role='button']:not(#otherTile), div[data-report-value='Email_Picker_Tile'], table.tile, .table-row.tile"
                 );
                 if (tile) {
-                    tile.click();
+                    triggerClick(tile);
                     return true;
                 }
 
                 // Auto-click "Yes" on "Stay signed in?" prompt (#idSIButton9)
-                const yesBtn = document.querySelector("#idSIButton9, input[id='idSIButton9'], button[id='idSIButton9']");
+                const dontShowCheckbox = document.querySelector("input[name='DontShowAgain'], #KmsiCheckboxField");
+                if (dontShowCheckbox && !dontShowCheckbox.checked) {
+                    triggerClick(dontShowCheckbox);
+                }
+                const yesBtn = document.querySelector("#idSIButton9, input[id='idSIButton9'], button[id='idSIButton9'], input[value='Yes'], input[value='Ja']");
                 if (yesBtn) {
-                    yesBtn.click();
+                    triggerClick(yesBtn);
                     return true;
                 }
             }
@@ -41,7 +75,7 @@ const AUTO_AUTH_AND_TOKEN_SCRIPT: &str = r##"
             if (host.includes("elosp.ugent.be")) {
                 const uforaLink = document.querySelector("a[href*='uforalogin'], a[href*='d2l']");
                 if (uforaLink) {
-                    uforaLink.click();
+                    triggerClick(uforaLink);
                     return true;
                 }
             }
@@ -50,7 +84,7 @@ const AUTO_AUTH_AND_TOKEN_SCRIPT: &str = r##"
             if (host.includes("ufora.ugent.be") && (href.includes("/d2l/login") || href.includes("/d2l/lp/auth/login"))) {
                 const loginBtn = document.querySelector("a[href*='uforalogin'], a[href*='saml']");
                 if (loginBtn) {
-                    loginBtn.click();
+                    triggerClick(loginBtn);
                     return true;
                 } else if (!href.includes("target=")) {
                     window.location.href = "https://elosp.ugent.be/welcome/uforalogin?target=%2fd2l%2fhome";
@@ -60,16 +94,25 @@ const AUTO_AUTH_AND_TOKEN_SCRIPT: &str = r##"
 
             // 4. Ufora Authenticated page -> extract token
             if (host.includes("ufora.ugent.be") && (href.includes("/d2l/home") || href.includes("/d2l/"))) {
-                // Try local storage first
+                // Try local storage first (validate exp > nowSec + 60)
                 try {
                     const raw = window.localStorage.getItem('D2L.Fetch.Tokens');
                     if (raw) {
                         const data = JSON.parse(raw);
+                        let bestToken = null;
+                        let bestExp = 0;
                         for (const item of Object.values(data)) {
                             if (item && item.access_token && item.access_token.startsWith('eyJ')) {
-                                window.location.href = 'https://ufora.ugent.be/__auth_done?token=' + encodeURIComponent(item.access_token);
-                                return true;
+                                const exp = parseJwtExp(item.access_token);
+                                if (exp > (nowSec + 60) && exp > bestExp) {
+                                    bestToken = item.access_token;
+                                    bestExp = exp;
+                                }
                             }
+                        }
+                        if (bestToken) {
+                            window.location.href = 'https://ufora.ugent.be/__auth_done?token=' + encodeURIComponent(bestToken);
+                            return true;
                         }
                     }
                 } catch (_) {}
@@ -77,7 +120,11 @@ const AUTO_AUTH_AND_TOKEN_SCRIPT: &str = r##"
                 // Fetch fresh token from D2L oauth endpoint
                 (async () => {
                     try {
-                        let xsrf = window.localStorage.getItem('XSRF.Token');
+                        let xsrf = null;
+                        try {
+                            xsrf = window.localStorage.getItem('XSRF.Token');
+                        } catch (_) {}
+
                         if (!xsrf) {
                             const xsrfResp = await window.fetch('/d2l/lp/auth/xsrf-tokens', { credentials: 'include' });
                             if (xsrfResp.ok) {
@@ -98,7 +145,10 @@ const AUTO_AUTH_AND_TOKEN_SCRIPT: &str = r##"
                             if (tokenResp.ok) {
                                 const tokenData = await tokenResp.json();
                                 if (tokenData && tokenData.access_token) {
-                                    window.location.href = 'https://ufora.ugent.be/__auth_done?token=' + encodeURIComponent(tokenData.access_token);
+                                    const exp = parseJwtExp(tokenData.access_token);
+                                    if (exp > (nowSec + 60)) {
+                                        window.location.href = 'https://ufora.ugent.be/__auth_done?token=' + encodeURIComponent(tokenData.access_token);
+                                    }
                                 }
                             }
                         }
@@ -112,6 +162,34 @@ const AUTO_AUTH_AND_TOKEN_SCRIPT: &str = r##"
         }
         return false;
     }
+
+    // Intercept fetch to capture Bearer tokens live from any background request
+    try {
+        const origFetch = window.fetch;
+        window.fetch = function(...args) {
+            const req = args[0];
+            const opts = args[1] || {};
+            const headers = opts.headers || (req && req.headers);
+            let auth = null;
+            if (headers) {
+                if (typeof headers.get === 'function') {
+                    auth = headers.get('authorization') || headers.get('Authorization');
+                } else if (headers['authorization']) {
+                    auth = headers['authorization'];
+                } else if (headers['Authorization']) {
+                    auth = headers['Authorization'];
+                }
+            }
+            if (auth && typeof auth === 'string' && auth.startsWith('Bearer eyJ')) {
+                const tok = auth.substring(7);
+                const exp = parseJwtExp(tok);
+                if (exp > ((Date.now() / 1000) + 60)) {
+                    window.location.href = 'https://ufora.ugent.be/__auth_done?token=' + encodeURIComponent(tok);
+                }
+            }
+            return origFetch.apply(this, args);
+        };
+    } catch (_) {}
 
     tryAuth();
     setInterval(tryAuth, 600);
@@ -206,10 +284,26 @@ pub fn is_token_expired(token: &D2lToken) -> bool {
     }
 }
 
+pub fn is_authenticated_and_valid(min_remaining_seconds: f64) -> bool {
+    if let Ok(token) = read_token() {
+        if let Some(exp) = token.exp {
+            let now = chrono::Utc::now().timestamp() as f64;
+            return now + min_remaining_seconds < exp;
+        }
+    }
+    false
+}
+
 pub fn open_login_window(app: &AppHandle) -> Result<(), String> {
+    // If background silent refresh is open, close it so they don't collide
+    if let Some(silent_win) = app.get_webview_window(SILENT_REFRESH_LABEL) {
+        let _ = silent_win.close();
+    }
+
     if let Some(win) = app.get_webview_window(LOGIN_WINDOW_LABEL) {
-        let _ = win.set_focus();
+        let _ = win.show();
         let _ = win.unminimize();
+        let _ = win.set_focus();
         return Ok(());
     }
 
@@ -218,8 +312,9 @@ pub fn open_login_window(app: &AppHandle) -> Result<(), String> {
 
     let builder = WebviewWindowBuilder::new(app, LOGIN_WINDOW_LABEL, WebviewUrl::External(url))
         .title("Log in to UGent Ufora")
-        .inner_size(720.0, 780.0)
+        .inner_size(760.0, 800.0)
         .center()
+        .visible(true)
         .initialization_script(AUTO_AUTH_AND_TOKEN_SCRIPT)
         .on_navigation(move |url| {
             if url.as_str().contains("__auth_done?token=") {
@@ -232,6 +327,7 @@ pub fn open_login_window(app: &AppHandle) -> Result<(), String> {
                             if !decoded.is_empty() {
                                 let _ = save_token_str(&decoded);
                                 let _ = handle_nav.emit("auth-status-changed", true);
+                                let _ = crate::tray::update_tray_menu(&handle_nav);
                                 if let Some(w) = handle_nav.get_webview_window(LOGIN_WINDOW_LABEL) {
                                     let _ = w.close();
                                 }
@@ -250,7 +346,10 @@ pub fn open_login_window(app: &AppHandle) -> Result<(), String> {
             }
         });
 
-    builder.build().map_err(|e| e.to_string())?;
+    let win = builder.build().map_err(|e| e.to_string())?;
+    let _ = win.show();
+    let _ = win.unminimize();
+    let _ = win.set_focus();
     Ok(())
 }
 
@@ -280,6 +379,7 @@ pub fn trigger_silent_refresh(app: &AppHandle) -> Result<(), String> {
                             if !decoded.is_empty() {
                                 let _ = save_token_str(&decoded);
                                 let _ = handle_nav.emit("auth-status-changed", true);
+                                let _ = crate::tray::update_tray_menu(&handle_nav);
                                 if let Some(w) = handle_nav.get_webview_window(SILENT_REFRESH_LABEL)
                                 {
                                     let _ = w.close();
@@ -301,10 +401,10 @@ pub fn trigger_silent_refresh(app: &AppHandle) -> Result<(), String> {
 
     builder.build().map_err(|e| e.to_string())?;
 
-    // Auto-timeout after 15 seconds so background webview never hangs indefinitely
+    // Auto-timeout after 12 seconds so background webview never hangs indefinitely
     let handle_timeout = app.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(12)).await;
         if let Some(w) = handle_timeout.get_webview_window(SILENT_REFRESH_LABEL) {
             let _ = w.close();
         }
@@ -330,25 +430,24 @@ pub async fn ensure_valid_token(
     app: &AppHandle,
     min_remaining_seconds: f64,
 ) -> Result<String, String> {
-    let now = chrono::Utc::now().timestamp() as f64;
-
     // 1. Return immediately if token is currently valid
     if let Ok(token) = read_token() {
         if let Some(exp) = token.exp {
+            let now = chrono::Utc::now().timestamp() as f64;
             if now + min_remaining_seconds < exp {
                 return Ok(token.token);
             }
         }
     }
 
-    // 2. Token is expired or near expiry -> attempt silent background refresh first
+    // 2. Token is expired or near expiry -> attempt fast silent background refresh first (4 seconds)
     let _ = trigger_silent_refresh(app);
 
-    // Poll for up to 8 seconds for silent renewal to complete
-    for _ in 0..16 {
+    for _ in 0..8 {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         if let Ok(token) = read_token() {
             if let Some(exp) = token.exp {
+                let now = chrono::Utc::now().timestamp() as f64;
                 if now + min_remaining_seconds < exp {
                     return Ok(token.token);
                 }
@@ -356,22 +455,30 @@ pub async fn ensure_valid_token(
         }
     }
 
-    // 3. If silent background renewal didn't complete, automatically open website login window
-    // to prompt Microsoft SSO / interactive login
+    // 3. Silent renewal did not conclude quickly -> close silent window and open visible login window
+    // so student sees account chooser or login prompt immediately with zero delay
+    if let Some(w) = app.get_webview_window(SILENT_REFRESH_LABEL) {
+        let _ = w.close();
+    }
     let _ = open_login_window(app);
 
-    // Poll for up to 45 seconds while user or SSO helper finishes
-    for _ in 0..90 {
+    // Poll for up to 60 seconds while user or SSO helper finishes
+    for _ in 0..120 {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         if let Ok(token) = read_token() {
             if let Some(exp) = token.exp {
+                let now = chrono::Utc::now().timestamp() as f64;
                 if now + min_remaining_seconds < exp {
+                    let _ = app.emit("auth-status-changed", true);
+                    let _ = crate::tray::update_tray_menu(app);
                     return Ok(token.token);
                 }
             }
         }
     }
 
+    let _ = app.emit("auth-status-changed", false);
+    let _ = crate::tray::update_tray_menu(app);
     Err("Authentication required. Please sign in with your UGent account.".to_string())
 }
 
