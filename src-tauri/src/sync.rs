@@ -333,10 +333,9 @@ impl SyncEngine {
         let _ = self.app_handle.emit("sync-status", "syncing");
         self.log("Starting Ufora sync pass…");
 
-        let token = match auth::ensure_authenticated(180.0) {
+        let token = match auth::ensure_valid_token(&self.app_handle, 180.0).await {
             Ok(t) => t,
             Err(e) => {
-                let _ = auth::trigger_silent_refresh(&self.app_handle);
                 self.log(&format!("✗ Auth error: {e}"));
                 let mut cfg = config::load_config();
                 cfg.last_sync_status = Some("error".to_string());

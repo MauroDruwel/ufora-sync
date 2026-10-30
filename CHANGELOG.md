@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-10-30
+
+### Added
+- **Intelligent Automatic SSO Renewal & Account Auto-Selection**:
+  - Implemented multi-stage token renewal (`ensure_valid_token`) that proactively checks token validity before every sync pass and course query.
+  - Injected automated Microsoft Entra ID / UGent SSO scripting (`AUTO_AUTH_AND_TOKEN_SCRIPT`) into WebViews: automatically recognizes and clicks saved UGent account tiles and auto-confirms "Stay signed in?" prompts.
+  - Automatically pops open the login window when silent renewal requires interaction, auto-selects the saved student account, extracts the refreshed token, and closes itself seamlessly without manual credential re-entry.
+  - Proactive background token keep-alive worker running every 10 minutes to renew sessions expiring within 20 minutes.
+  - Added a dedicated "Refresh Session" button in the Settings Account card.
+- **System Startup at Boot (Launch at Login)**:
+  - Added native autostart support via `tauri-plugin-autostart` across macOS (LaunchAgent), Windows (Registry), and Linux (XDG Autostart).
+  - Added dynamic "Start at Login" toggle to the native macOS / desktop system tray menu.
+  - Added a "System & Startup" preference card in the Settings modal with real-time OS state synchronization.
+  - Added `--minimized` launch flag support so the app quietly boots into the menu bar without interrupting the student's workflow.
+
 ## [1.0.3] - 2026-10-29
 
 ### Fixed

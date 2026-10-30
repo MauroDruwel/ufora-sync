@@ -29,10 +29,12 @@ pub fn save_config(new_cfg: AppConfig, engine: State<'_, Arc<SyncEngine>>) -> Re
 }
 
 #[tauri::command]
-pub fn get_auth_status() -> AuthStatus {
+pub fn get_auth_status(app: tauri::AppHandle) -> AuthStatus {
     match auth::read_token() {
         Ok(t) => {
             if auth::is_token_expired(&t) {
+                // Trigger background silent refresh early so token stays fresh
+                let _ = auth::trigger_silent_refresh(&app);
                 AuthStatus {
                     is_authenticated: false,
                     user_id: t.sub,
@@ -64,13 +66,42 @@ pub fn logout(app: tauri::AppHandle, engine: State<'_, Arc<SyncEngine>>) -> Resu
     auth::logout()?;
     engine.log("Logged out from UGent Ufora. Local token cleared.");
     let _ = app.emit("auth-status-changed", false);
+    let _ = crate::tray::update_tray_menu(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn list_courses() -> Result<Vec<Course>, String> {
-    let token = auth::ensure_authenticated(180.0)?;
+pub async fn list_courses(app: tauri::AppHandle) -> Result<Vec<Course>, String> {
+    let token = auth::ensure_valid_token(&app, 180.0).await?;
     api::fetch_enrolled_courses(&token).await
+}
+
+#[tauri::command]
+pub fn get_autostart_status(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    let enabled = manager.is_enabled().unwrap_or(false);
+    Ok(enabled)
+}
+
+#[tauri::command]
+pub fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    if enabled {
+        manager
+            .enable()
+            .map_err(|e| format!("Failed to enable autostart: {e}"))?;
+    } else {
+        manager
+            .disable()
+            .map_err(|e| format!("Failed to disable autostart: {e}"))?;
+    }
+    let mut cfg = config::load_config();
+    cfg.auto_start_tray = enabled;
+    let _ = config::save_config(&cfg);
+    let _ = crate::tray::update_tray_menu(&app);
+    Ok(enabled)
 }
 
 #[tauri::command]

@@ -1,4 +1,4 @@
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import packageJson from "../../package.json";
 import { AppConfig, AuthStatus, UpdateInfo } from "../types";
 import { invoke } from "@tauri-apps/api/core";
@@ -54,6 +54,20 @@ export const SettingsModal = ({
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [updateStatusMessage, setUpdateStatusMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    async function checkAutostart() {
+      try {
+        const enabled: boolean = await invoke("get_autostart_status");
+        setAutostart(enabled);
+      } catch (err) {
+        console.warn("Could not query autostart status:", err);
+      }
+    }
+    if (isOpen) {
+      checkAutostart();
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handlePickFolder = async () => {
@@ -94,17 +108,22 @@ export const SettingsModal = ({
     e.preventDefault();
     setSaving(true);
     try {
-      if (autostart) {
-        try {
-          await enableAutostart();
-        } catch (err) {
-          console.warn("Failed to enable autostart:", err);
-        }
-      } else {
-        try {
-          await disableAutostart();
-        } catch (err) {
-          console.warn("Failed to disable autostart:", err);
+      try {
+        await invoke("set_autostart", { enabled: autostart });
+      } catch (err) {
+        console.warn("Failed to set autostart via command:", err);
+        if (autostart) {
+          try {
+            await enableAutostart();
+          } catch (e2) {
+            console.warn("Failed to enable autostart fallback:", e2);
+          }
+        } else {
+          try {
+            await disableAutostart();
+          } catch (e2) {
+            console.warn("Failed to disable autostart fallback:", e2);
+          }
         }
       }
 
@@ -199,14 +218,27 @@ export const SettingsModal = ({
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmingLogout(true)}
-                    className="flex items-center space-x-1 px-3 py-1 bg-[#b3261e]/10 hover:bg-[#b3261e]/20 text-[#b3261e] dark:text-[#f2b8b5] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
-                  >
-                    <LogOut className="w-3 h-3" />
-                    <span>Log Out</span>
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    {onLogin && (
+                      <button
+                        type="button"
+                        onClick={onLogin}
+                        className="flex items-center space-x-1 px-3 py-1 bg-[#1a73e8]/10 hover:bg-[#1a73e8]/20 text-[#1a73e8] dark:text-[#a8c7fa] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
+                        title="Re-open UGent single sign-on to refresh access token"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Refresh Session</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingLogout(true)}
+                      className="flex items-center space-x-1 px-3 py-1 bg-[#b3261e]/10 hover:bg-[#b3261e]/20 text-[#b3261e] dark:text-[#f2b8b5] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
+                    >
+                      <LogOut className="w-3 h-3" />
+                      <span>Log Out</span>
+                    </button>
+                  </div>
                 )
               ) : !authStatus.is_authenticated && onLogin ? (
                 <button
@@ -357,17 +389,25 @@ export const SettingsModal = ({
                 Generate clickable .html shortcut files for online activities
               </span>
             </label>
+          </div>
 
-            <label className="flex items-center space-x-3 cursor-pointer select-none">
+          {/* System & Startup */}
+          <div className="pt-3 border-t border-black/[0.06] dark:border-white/[0.06]">
+            <label className="flex items-start space-x-3 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={autostart}
                 onChange={(e) => setAutostart(e.target.checked)}
-                className="w-4 h-4 rounded border-black/[0.12] dark:border-white/[0.12] bg-[#ffffff] dark:bg-[#131314] text-[#1a73e8] dark:text-[#a8c7fa] focus:ring-0 cursor-pointer"
+                className="mt-0.5 w-4 h-4 rounded border-black/[0.12] dark:border-white/[0.12] bg-[#ffffff] dark:bg-[#131314] text-[#1a73e8] dark:text-[#a8c7fa] focus:ring-0 cursor-pointer"
               />
-              <span className="text-[#444746] dark:text-[#c4c7c5]">
-                Launch Ufora Sync automatically when logging into computer
-              </span>
+              <div>
+                <span className="text-[#1f1f1f] dark:text-[#e3e3e3] block text-xs font-medium">
+                  Start Ufora Sync automatically at login
+                </span>
+                <span className="text-[11px] text-[#747775] dark:text-[#8e918f] block">
+                  Runs quietly in the background menu bar when you start your Mac
+                </span>
+              </div>
             </label>
           </div>
 

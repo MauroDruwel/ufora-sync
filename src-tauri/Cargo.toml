@@ -1,6 +1,6 @@
 [package]
 name = "ufora-sync"
-version = "1.0.3"
+version = "1.0.4"
 description = "Native background sync service and desktop companion for UGent Ufora"
 authors = ["Mauro Druwel"]
 edition = "2021"

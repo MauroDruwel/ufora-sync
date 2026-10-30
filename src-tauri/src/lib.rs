@@ -17,7 +17,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
+            Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             tray::show_main(app);
@@ -32,6 +32,24 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Sync autostart configuration with system
+            let cfg = config::load_config();
+            if cfg.auto_start_tray {
+                use tauri_plugin_autostart::ManagerExt;
+                let manager = app.autolaunch();
+                if let Ok(false) = manager.is_enabled() {
+                    let _ = manager.enable();
+                }
+            }
+
+            // Check if launched with --minimized flag (from autostart LaunchAgent)
+            let is_minimized = std::env::args().any(|a| a == "--minimized");
+            if is_minimized {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+
             #[cfg(target_os = "macos")]
             {
                 use window_vibrancy::{
@@ -130,6 +148,22 @@ pub fn run() {
                 }
             });
 
+            // Silent token keep-alive background task: proactively renews before expiry
+            let app_keepalive = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(600)).await;
+                    if let Ok(token) = auth::read_token() {
+                        if let Some(exp) = token.exp {
+                            let now = chrono::Utc::now().timestamp() as f64;
+                            if now + 1200.0 >= exp {
+                                let _ = auth::trigger_silent_refresh(&app_keepalive);
+                            }
+                        }
+                    }
+                }
+            });
+
             Ok(())
         });
 
@@ -149,6 +183,8 @@ pub fn run() {
             commands::open_course_folder,
             commands::open_url,
             commands::check_for_updates,
+            commands::get_autostart_status,
+            commands::set_autostart,
         ])
         .build(tauri::generate_context!())
         .expect("error while building ufora-sync application");

@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 
@@ -47,6 +47,21 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             "open_login" => {
                 let _ = crate::auth::open_login_window(app);
             }
+            "toggle_autostart" => {
+                use tauri_plugin_autostart::ManagerExt;
+                let manager = app.autolaunch();
+                let current = manager.is_enabled().unwrap_or(false);
+                let new_state = !current;
+                if new_state {
+                    let _ = manager.enable();
+                } else {
+                    let _ = manager.disable();
+                }
+                let mut cfg = crate::config::load_config();
+                cfg.auto_start_tray = new_state;
+                let _ = crate::config::save_config(&cfg);
+                let _ = update_tray_menu(app);
+            }
             "quit" => app.exit(0),
             _ => {}
         });
@@ -80,6 +95,20 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let sep2 = PredefinedMenuItem::separator(app)?;
     let settings_item =
         MenuItem::with_id(app, "show", "⚙️ Settings & Courses…", true, None::<&str>)?;
+
+    let is_autostart = {
+        use tauri_plugin_autostart::ManagerExt;
+        app.autolaunch().is_enabled().unwrap_or(false)
+    };
+    let autostart_item = CheckMenuItem::with_id(
+        app,
+        "toggle_autostart",
+        "Start at Login",
+        true,
+        is_autostart,
+        None::<&str>,
+    )?;
+
     let about_meta = tauri::menu::AboutMetadataBuilder::new()
         .name(Some("Ufora Sync"))
         .version(Some(env!("CARGO_PKG_VERSION")))
@@ -115,6 +144,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 &open_ufora,
                 &sep2,
                 &settings_item,
+                &autostart_item,
                 &about_item,
                 &sep3,
                 &quit_item,
@@ -131,12 +161,21 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 &open_ufora,
                 &sep2,
                 &settings_item,
+                &autostart_item,
                 &about_item,
                 &sep3,
                 &quit_item,
             ],
         )
     }
+}
+
+pub fn update_tray_menu(app: &AppHandle) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let menu = build_menu(app).map_err(|e| e.to_string())?;
+        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn show_main(app: &AppHandle) {
