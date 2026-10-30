@@ -29,14 +29,10 @@ pub fn save_config(new_cfg: AppConfig, engine: State<'_, Arc<SyncEngine>>) -> Re
 }
 
 #[tauri::command]
-pub fn get_auth_status(_app: tauri::AppHandle) -> AuthStatus {
+pub fn get_auth_status() -> AuthStatus {
     match auth::read_token() {
         Ok(t) => {
             if auth::is_token_expired(&t) {
-                // Trigger background silent refresh early so token stays fresh
-                tauri::async_runtime::spawn(async move {
-                    let _ = auth::try_ufora_cli_refresh().await;
-                });
                 AuthStatus {
                     is_authenticated: false,
                     user_id: t.sub,

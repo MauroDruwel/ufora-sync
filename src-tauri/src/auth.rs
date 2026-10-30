@@ -295,47 +295,63 @@ pub fn is_authenticated_and_valid(min_remaining_seconds: f64) -> bool {
     false
 }
 
-/// Headless silent background renewal using the system `ufora refresh` CLI (from ufora-ai / python).
-/// Returns true if a fresh valid token was captured into ~/.d2l/token.json.
-pub async fn try_ufora_cli_refresh() -> bool {
-    let candidates = [
-        "ufora",
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static IS_REFRESHING: AtomicBool = AtomicBool::new(false);
+
+pub fn find_ufora_cli() -> Option<PathBuf> {
+    for candidate in [
         "/Library/Frameworks/Python.framework/Versions/3.14/bin/ufora",
         "/Library/Frameworks/Python.framework/Versions/Current/bin/ufora",
         "/usr/local/bin/ufora",
         "/opt/homebrew/bin/ufora",
-    ];
-
-    for exe in candidates {
-        let output = tokio::time::timeout(
-            std::time::Duration::from_secs(35),
-            tokio::process::Command::new(exe).arg("refresh").output(),
-        )
-        .await;
-
-        if let Ok(Ok(out)) = output {
-            if out.status.success() {
-                return true;
-            }
+    ] {
+        let p = PathBuf::from(candidate);
+        if p.exists() {
+            return Some(p);
         }
     }
-
     if let Some(home) = dirs::home_dir() {
-        let local_ufora = home.join(".local").join("bin").join("ufora");
-        if local_ufora.exists() {
-            let output = tokio::time::timeout(
-                std::time::Duration::from_secs(35),
-                tokio::process::Command::new(&local_ufora)
-                    .arg("refresh")
-                    .output(),
-            )
-            .await;
+        let p = home.join(".local").join("bin").join("ufora");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
 
-            if let Ok(Ok(out)) = output {
-                if out.status.success() {
-                    return true;
-                }
-            }
+/// Headless silent background renewal using the system `ufora refresh` CLI (from ufora-ai / python).
+/// Returns true if a fresh valid token was captured into ~/.d2l/token.json.
+pub async fn try_ufora_cli_refresh() -> bool {
+    let Some(exe) = find_ufora_cli() else {
+        return false;
+    };
+
+    // Singleton guard: never run multiple ufora refresh concurrently
+    if IS_REFRESHING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return false;
+    }
+
+    struct RefreshGuard;
+    impl Drop for RefreshGuard {
+        fn drop(&mut self) {
+            IS_REFRESHING.store(false, Ordering::SeqCst);
+        }
+    }
+    let _guard = RefreshGuard;
+
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        tokio::process::Command::new(exe).arg("refresh").output(),
+    )
+    .await;
+
+    if let Ok(Ok(out)) = output {
+        if out.status.success() {
+            return true;
         }
     }
 
