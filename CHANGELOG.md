@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-10-30
+
+### Fixed
+- **Fully Native Token Renewal**:
+  - Replaced the runtime `ufora refresh` subprocess bridge with an app-owned hidden WebView refresh flow, removing the external Python, `ufora-ai`, and Playwright dependency.
+  - Persisted only the UGent and Microsoft sign-in-chain cookies (including HTTP-only session cookies) in a private `~/.d2l/session.json` file, restored them before background renewal, and disabled hidden-WebView throttling where supported.
+  - Prevented stale near-expiry tokens from being recaptured during renewal and serialized concurrent refresh attempts.
+  - Explicit logout now clears the token, saved browser session, and in-app authentication cookies.
+  - Settings now forces a fresh hidden token renewal instead of reopening the interactive Ufora page, reports progress, and closes its temporary WebView after completion.
+  - Limited close-to-tray behavior to the main window so authentication and refresh windows are destroyed normally.
+
 ## [1.0.6] - 2026-10-30
 
 ### Fixed

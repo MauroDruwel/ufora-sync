@@ -329,6 +329,19 @@ export default function App() {
     }
   };
 
+  const handleRefreshSession = async () => {
+    try {
+      await invoke("refresh_session");
+      const updatedAuth: AuthStatus = await invoke("get_auth_status");
+      setAuthStatus(updatedAuth);
+    } catch (err) {
+      console.error("Failed to refresh session:", err);
+      const updatedAuth: AuthStatus = await invoke("get_auth_status");
+      setAuthStatus(updatedAuth);
+      throw err;
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await invoke("logout");
@@ -683,6 +696,7 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
         onLogin={handleOpenLogin}
+        onRefreshSession={handleRefreshSession}
         onLogout={handleLogout}
       />
     </div>

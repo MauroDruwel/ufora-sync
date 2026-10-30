@@ -60,8 +60,16 @@ pub fn open_login(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn logout(app: tauri::AppHandle, engine: State<'_, Arc<SyncEngine>>) -> Result<(), String> {
-    auth::logout()?;
+pub async fn refresh_session(app: tauri::AppHandle) -> Result<(), String> {
+    auth::refresh_session(&app).await
+}
+
+#[tauri::command]
+pub async fn logout(
+    app: tauri::AppHandle,
+    engine: State<'_, Arc<SyncEngine>>,
+) -> Result<(), String> {
+    auth::logout_and_clear(&app).await?;
     engine.log("Logged out from UGent Ufora. Local token cleared.");
     let _ = app.emit("auth-status-changed", false);
     let _ = crate::tray::update_tray_menu(&app);
@@ -108,7 +116,7 @@ pub async fn sync_now(
     engine: State<'_, Arc<SyncEngine>>,
 ) -> Result<(), String> {
     if !auth::is_authenticated_and_valid(180.0) {
-        let refreshed = auth::try_ufora_cli_refresh().await;
+        let refreshed = auth::try_native_token_refresh(&app, 180.0).await;
         if !refreshed || !auth::is_authenticated_and_valid(180.0) {
             let _ = auth::open_login_window(&app);
             return Err(

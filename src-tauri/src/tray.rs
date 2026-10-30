@@ -32,7 +32,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
                 let handle = app.clone();
                 tauri::async_runtime::spawn(async move {
                     if !crate::auth::is_authenticated_and_valid(180.0) {
-                        let refreshed = crate::auth::try_ufora_cli_refresh().await;
+                        let refreshed = crate::auth::try_native_token_refresh(&handle, 180.0).await;
                         if !refreshed || !crate::auth::is_authenticated_and_valid(180.0) {
                             let _ = crate::auth::open_login_window(&handle);
                             return;

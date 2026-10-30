@@ -26,9 +26,11 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .setup(|app| {
@@ -173,6 +175,7 @@ pub fn run() {
             commands::save_config,
             commands::get_auth_status,
             commands::open_login,
+            commands::refresh_session,
             commands::logout,
             commands::list_courses,
             commands::sync_now,

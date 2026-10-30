@@ -1,7 +1,7 @@
 {
   "name": "ufora-sync",
   "private": true,
-  "version": "1.0.6",
+  "version": "1.0.7",
   "type": "module",
   "description": "Native background sync service and desktop companion for UGent Ufora (Tauri v2 + Rust)",
   "author": "Mauro Druwel",
@@ -25,11 +25,11 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && node scripts/check-auth-script.mjs && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && node scripts/check-auth-script.mjs",
     "test": "vitest run"
   },
   "dependencies": {

@@ -25,6 +25,7 @@ interface SettingsModalProps {
   onClose: () => void;
   onSave: (newConfig: AppConfig) => Promise<void>;
   onLogin?: () => void;
+  onRefreshSession?: () => Promise<void>;
   onLogout?: () => void;
 }
 
@@ -35,6 +36,7 @@ export const SettingsModal = ({
   onClose,
   onSave,
   onLogin,
+  onRefreshSession,
   onLogout,
 }: SettingsModalProps) => {
   const [syncDir, setSyncDir] = useState(config.sync_dir);
@@ -49,6 +51,11 @@ export const SettingsModal = ({
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
+  const [isRefreshingSession, setIsRefreshingSession] = useState(false);
+  const [sessionRefreshMessage, setSessionRefreshMessage] = useState<{
+    text: string;
+    isError: boolean;
+  } | null>(null);
 
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -101,6 +108,24 @@ export const SettingsModal = ({
       setUpdateStatusMessage("Could not check for updates. Try again later.");
     } finally {
       setIsCheckingUpdate(false);
+    }
+  };
+
+  const handleRefreshSession = async () => {
+    if (!onRefreshSession || isRefreshingSession) return;
+    setIsRefreshingSession(true);
+    setSessionRefreshMessage(null);
+    try {
+      await onRefreshSession();
+      setSessionRefreshMessage({ text: "Session refreshed", isError: false });
+    } catch (err) {
+      console.error("Failed to refresh Ufora session:", err);
+      setSessionRefreshMessage({
+        text: "Silent refresh failed. Please log in again.",
+        isError: true,
+      });
+    } finally {
+      setIsRefreshingSession(false);
     }
   };
 
@@ -182,6 +207,17 @@ export const SettingsModal = ({
                 <p className="text-[11px] text-[#747775] dark:text-[#8e918f]">
                   {authStatus.user_id ? `Student / User ID: ${authStatus.user_id}` : authStatus.message}
                 </p>
+                {sessionRefreshMessage && (
+                  <p
+                    className={`text-[11px] ${
+                      sessionRefreshMessage.isError
+                        ? "text-[#b3261e] dark:text-[#f2b8b5]"
+                        : "text-[#188038] dark:text-[#6dd58c]"
+                    }`}
+                  >
+                    {sessionRefreshMessage.text}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -219,15 +255,16 @@ export const SettingsModal = ({
                   </div>
                 ) : (
                   <div className="flex items-center space-x-2">
-                    {onLogin && (
+                    {onRefreshSession && (
                       <button
                         type="button"
-                        onClick={onLogin}
+                        onClick={handleRefreshSession}
+                        disabled={isRefreshingSession}
                         className="flex items-center space-x-1 px-3 py-1 bg-[#1a73e8]/10 hover:bg-[#1a73e8]/20 text-[#1a73e8] dark:text-[#a8c7fa] font-medium rounded-full text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
-                        title="Re-open UGent single sign-on to refresh access token"
+                        title="Renew the Ufora access token in the background"
                       >
-                        <RefreshCw className="w-3 h-3" />
-                        <span>Refresh Session</span>
+                        <RefreshCw className={`w-3 h-3 ${isRefreshingSession ? "animate-spin" : ""}`} />
+                        <span>{isRefreshingSession ? "Refreshing…" : "Refresh Session"}</span>
                       </button>
                     )}
                     <button
