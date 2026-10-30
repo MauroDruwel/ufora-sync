@@ -29,12 +29,14 @@ pub fn save_config(new_cfg: AppConfig, engine: State<'_, Arc<SyncEngine>>) -> Re
 }
 
 #[tauri::command]
-pub fn get_auth_status(app: tauri::AppHandle) -> AuthStatus {
+pub fn get_auth_status(_app: tauri::AppHandle) -> AuthStatus {
     match auth::read_token() {
         Ok(t) => {
             if auth::is_token_expired(&t) {
                 // Trigger background silent refresh early so token stays fresh
-                let _ = auth::trigger_silent_refresh(&app);
+                tauri::async_runtime::spawn(async move {
+                    let _ = auth::try_ufora_cli_refresh().await;
+                });
                 AuthStatus {
                     is_authenticated: false,
                     user_id: t.sub,
@@ -105,9 +107,18 @@ pub fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, Strin
 }
 
 #[tauri::command]
-pub fn sync_now(app: tauri::AppHandle, engine: State<'_, Arc<SyncEngine>>) -> Result<(), String> {
+pub async fn sync_now(
+    app: tauri::AppHandle,
+    engine: State<'_, Arc<SyncEngine>>,
+) -> Result<(), String> {
     if !auth::is_authenticated_and_valid(180.0) {
-        let _ = auth::open_login_window(&app);
+        let refreshed = auth::try_ufora_cli_refresh().await;
+        if !refreshed || !auth::is_authenticated_and_valid(180.0) {
+            let _ = auth::open_login_window(&app);
+            return Err(
+                "Authentication required. Please sign in with your UGent account.".to_string(),
+            );
+        }
     }
     let engine_clone = Arc::clone(&engine);
     tauri::async_runtime::spawn(async move {

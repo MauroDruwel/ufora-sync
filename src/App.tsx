@@ -275,10 +275,6 @@ export default function App() {
 
   const handleSyncNow = async () => {
     try {
-      if (!authStatus.is_authenticated) {
-        await invoke("open_login");
-        return;
-      }
       await invoke("sync_now");
       try {
         const loadedCourses: Course[] = await invoke("list_courses");
@@ -288,6 +284,12 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to sync now:", err);
+      try {
+        const updatedAuth: AuthStatus = await invoke("get_auth_status");
+        setAuthStatus(updatedAuth);
+      } catch (e) {
+        console.debug("Could not refresh auth status:", e);
+      }
     }
   };
 

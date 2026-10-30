@@ -58,7 +58,7 @@ describe("Type definitions and domain contracts", () => {
 
   it("validates UpdateInfo contract", () => {
     const update: UpdateInfo = {
-      current_version: "1.0.5",
+      current_version: "1.0.6",
       latest_version: "1.1.0",
       has_update: true,
       release_notes: "Added automatic sync",
@@ -67,7 +67,7 @@ describe("Type definitions and domain contracts", () => {
     };
 
     expect(update.has_update).toBe(true);
-    expect(update.current_version).toBe("1.0.5");
+    expect(update.current_version).toBe("1.0.6");
     expect(update.latest_version).toBe("1.1.0");
     expect(update.html_url).toContain("MauroDruwel/ufora-sync");
   });

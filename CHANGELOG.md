@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-10-30
+
+### Fixed
+- **Eliminated Screen Flickering & Redirect Loops**:
+  - Resolved infinite redirect loop between `ufora.ugent.be/d2l/login` and `elosp.ugent.be` by strictly selecting in-page login links and removing disruptive programmatic location overwrites.
+  - Eliminated rapid-fire account tile click spam on Microsoft Entra ID with persistent single-execution session guards (`__ufora_tile_clicked` and `__ufora_kmsi_clicked`).
+  - Scoped network request interception strictly to `ufora.ugent.be`, preventing prototype pollution or JavaScript exceptions from breaking Microsoft's single-page login application.
+  - Removed duplicate script execution on WebKit page load finished events.
+- **Headless Silent Background Token Auto-Renewal**:
+  - Integrated system `ufora refresh` bridge into Rust engine to silently renew expiring Brightspace tokens in the background without opening any visible browser window.
+  - Background sync passes no longer stall for 53 seconds on auth expiration or unexpectedly pop open visible windows during scheduled syncs.
+- **Unified Sync Action**:
+  - Synchronized both "Sync Now" buttons (App Header and macOS Tray Menu) to execute the exact same auth-check, silent-renewal, and fallback sign-in workflow.
+
 ## [1.0.5] - 2026-10-30
 
 ### Fixed

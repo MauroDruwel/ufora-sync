@@ -32,7 +32,11 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
                 let handle = app.clone();
                 tauri::async_runtime::spawn(async move {
                     if !crate::auth::is_authenticated_and_valid(180.0) {
-                        let _ = crate::auth::open_login_window(&handle);
+                        let refreshed = crate::auth::try_ufora_cli_refresh().await;
+                        if !refreshed || !crate::auth::is_authenticated_and_valid(180.0) {
+                            let _ = crate::auth::open_login_window(&handle);
+                            return;
+                        }
                     }
                     if let Some(engine) = handle.try_state::<Arc<crate::sync::SyncEngine>>() {
                         let cfg = crate::config::load_config();

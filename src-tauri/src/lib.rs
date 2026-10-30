@@ -37,7 +37,7 @@ pub fn run() {
             if cfg.auto_start_tray {
                 use tauri_plugin_autostart::ManagerExt;
                 let manager = app.autolaunch();
-                if let Ok(false) = manager.is_enabled() {
+                if !manager.is_enabled().unwrap_or(false) {
                     let _ = manager.enable();
                 }
             }
