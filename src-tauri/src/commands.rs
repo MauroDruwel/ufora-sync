@@ -23,7 +23,7 @@ pub fn get_config() -> AppConfig {
 
 #[tauri::command]
 pub fn save_config(new_cfg: AppConfig, engine: State<'_, Arc<SyncEngine>>) -> Result<(), String> {
-    config::save_config(&new_cfg)?;
+    config::save_user_config(&new_cfg)?;
     engine.log("Settings saved.");
     Ok(())
 }
@@ -86,8 +86,9 @@ pub async fn list_courses(app: tauri::AppHandle) -> Result<Vec<Course>, String> 
 pub fn get_autostart_status(app: tauri::AppHandle) -> Result<bool, String> {
     use tauri_plugin_autostart::ManagerExt;
     let manager = app.autolaunch();
-    let enabled = manager.is_enabled().unwrap_or(false);
-    Ok(enabled)
+    manager
+        .is_enabled()
+        .map_err(|e| format!("Failed to read autostart status: {e}"))
 }
 
 #[tauri::command]
@@ -103,9 +104,7 @@ pub fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, Strin
             .disable()
             .map_err(|e| format!("Failed to disable autostart: {e}"))?;
     }
-    let mut cfg = config::load_config();
-    cfg.auto_start_tray = enabled;
-    let _ = config::save_config(&cfg);
+    config::update_config(|cfg| cfg.auto_start_tray = enabled)?;
     let _ = crate::tray::update_tray_menu(&app);
     Ok(enabled)
 }
@@ -168,21 +167,39 @@ pub fn get_recent_logs() -> Vec<String> {
 }
 
 #[tauri::command]
-pub fn open_folder(path: String) -> Result<(), String> {
-    open::that(&path).map_err(|e| format!("Failed to open folder: {e}"))
+pub fn open_folder() -> Result<(), String> {
+    let cfg = config::load_config();
+    fs::create_dir_all(&cfg.sync_dir).map_err(|e| format!("Failed to create sync folder: {e}"))?;
+    open::that(&cfg.sync_dir).map_err(|e| format!("Failed to open folder: {e}"))
 }
 
 #[tauri::command]
 pub fn open_course_folder(folder_name: String) -> Result<(), String> {
+    if folder_name.trim().is_empty()
+        || folder_name.contains(['/', '\\'])
+        || matches!(folder_name.as_str(), "." | "..")
+        || folder_name.chars().any(char::is_control)
+    {
+        return Err("Invalid course folder name.".to_string());
+    }
     let cfg = config::load_config();
     let course_dir = PathBuf::from(&cfg.sync_dir).join(&folder_name);
-    let _ = fs::create_dir_all(&course_dir);
+    fs::create_dir_all(&course_dir).map_err(|e| format!("Failed to create course folder: {e}"))?;
     open::that(&course_dir).map_err(|e| format!("Failed to open folder: {e}"))
 }
 
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
-    open::that(&url).map_err(|e| format!("Failed to open link: {e}"))
+    let normalized = if url.starts_with('/') {
+        format!("https://ufora.ugent.be{url}")
+    } else {
+        url
+    };
+    let parsed = reqwest::Url::parse(&normalized).map_err(|_| "Invalid link URL.".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Only HTTP and HTTPS links can be opened.".to_string());
+    }
+    open::that(parsed.as_str()).map_err(|e| format!("Failed to open link: {e}"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,6 +240,7 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
     let current_version = env!("CARGO_PKG_VERSION").to_string();
     let client = reqwest::Client::builder()
         .user_agent(format!("ufora-sync/{}", current_version))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -233,14 +251,10 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
         .map_err(|e| format!("Failed to reach GitHub: {e}"))?;
 
     if !res.status().is_success() {
-        return Ok(UpdateInfo {
-            current_version: current_version.clone(),
-            latest_version: current_version,
-            has_update: false,
-            release_notes: None,
-            html_url: "https://github.com/MauroDruwel/ufora-sync/releases".to_string(),
-            published_at: None,
-        });
+        return Err(format!(
+            "GitHub update service returned status {}",
+            res.status()
+        ));
     }
 
     let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;

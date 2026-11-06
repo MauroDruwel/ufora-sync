@@ -43,13 +43,13 @@ export const SettingsModal = ({
   const [interval, setInterval] = useState(config.interval_minutes);
   const [conflictStrategy, setConflictStrategy] = useState(config.conflict_strategy);
   const [suffix, setSuffix] = useState(config.duplicate_suffix);
-  const [syncDesc, setSyncDesc] = useState(config.sync_descriptions);
   const [syncLinks, setSyncLinks] = useState(config.sync_links);
   const [autostart, setAutostart] = useState(config.auto_start_tray);
   const [showAllCourses, setShowAllCourses] = useState(config.show_all_courses ?? false);
   const [showGroups, setShowGroups] = useState(config.show_groups ?? false);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const [isRefreshingSession, setIsRefreshingSession] = useState(false);
   const [sessionRefreshMessage, setSessionRefreshMessage] = useState<{
@@ -60,6 +60,24 @@ export const SettingsModal = ({
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [updateStatusMessage, setUpdateStatusMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setSyncDir(config.sync_dir);
+    setInterval(config.interval_minutes);
+    setConflictStrategy(config.conflict_strategy);
+    setSuffix(config.duplicate_suffix);
+    setSyncLinks(config.sync_links);
+    setAutostart(config.auto_start_tray);
+    setShowAllCourses(config.show_all_courses ?? false);
+    setShowGroups(config.show_groups ?? false);
+    setSaving(false);
+    setSavedSuccess(false);
+    setSaveError(null);
+    setConfirmingLogout(false);
+    setSessionRefreshMessage(null);
+  }, [config, isOpen]);
 
   useEffect(() => {
     async function checkAutostart() {
@@ -74,6 +92,20 @@ export const SettingsModal = ({
       checkAutostart();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || saving) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose, saving]);
 
   if (!isOpen) return null;
 
@@ -132,6 +164,7 @@ export const SettingsModal = ({
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setSaveError(null);
     try {
       try {
         await invoke("set_autostart", { enabled: autostart });
@@ -141,13 +174,15 @@ export const SettingsModal = ({
           try {
             await enableAutostart();
           } catch (e2) {
-            console.warn("Failed to enable autostart fallback:", e2);
+            console.error("Failed to enable autostart fallback:", e2);
+            throw new Error("Could not enable automatic startup.");
           }
         } else {
           try {
             await disableAutostart();
           } catch (e2) {
-            console.warn("Failed to disable autostart fallback:", e2);
+            console.error("Failed to disable autostart fallback:", e2);
+            throw new Error("Could not disable automatic startup.");
           }
         }
       }
@@ -158,7 +193,6 @@ export const SettingsModal = ({
         interval_minutes: interval,
         conflict_strategy: conflictStrategy,
         duplicate_suffix: suffix.trim() || "_edited",
-        sync_descriptions: syncDesc,
         sync_links: syncLinks,
         auto_start_tray: autostart,
         show_all_courses: showAllCourses,
@@ -169,6 +203,9 @@ export const SettingsModal = ({
         setSavedSuccess(false);
         onClose();
       }, 700);
+    } catch (err) {
+      console.error("Failed to save preferences:", err);
+      setSaveError("Could not save preferences. Review your settings and try again.");
     } finally {
       setSaving(false);
     }
@@ -176,14 +213,25 @@ export const SettingsModal = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 dark:bg-black/60 flex items-center justify-center p-4">
-      <div className="bg-[#ffffff] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] rounded-3xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] shadow-xl transition-colors duration-150">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-dialog-title"
+        className="bg-[#ffffff] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] rounded-3xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] shadow-xl transition-colors duration-150"
+      >
         {/* Header */}
         <div className="px-6 py-4 border-b border-black/[0.08] dark:border-white/[0.08] flex items-center justify-between select-none">
-          <h2 className="text-base font-medium text-[#1f1f1f] dark:text-[#e3e3e3]">
+          <h2
+            id="settings-dialog-title"
+            className="text-base font-medium text-[#1f1f1f] dark:text-[#e3e3e3]"
+          >
             Preferences & Settings
           </h2>
           <button
+            type="button"
+            autoFocus
             onClick={onClose}
+            aria-label="Close settings"
             className="w-8 h-8 rounded-full flex items-center justify-center text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] hover:bg-[#f0f4f9] dark:hover:bg-[#282a2c] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
           >
             <X className="w-4 h-4" />
@@ -296,6 +344,7 @@ export const SettingsModal = ({
             <div className="flex items-center space-x-2">
               <input
                 type="text"
+                aria-label="Local sync directory"
                 value={syncDir}
                 onChange={(e) => setSyncDir(e.target.value)}
                 className="flex-1 bg-[#ffffff] dark:bg-[#131314] border border-black/[0.12] dark:border-white/[0.08] focus:border-[#1a73e8] dark:focus:border-[#a8c7fa] focus:outline-none rounded-xl px-3.5 py-2.5 text-[#1f1f1f] dark:text-[#e3e3e3] font-mono text-xs transition duration-150"
@@ -316,6 +365,7 @@ export const SettingsModal = ({
           <div className="space-y-2">
             <label className="font-medium text-[#444746] dark:text-[#c4c7c5]">Sync Interval</label>
             <select
+              aria-label="Sync interval"
               value={interval}
               onChange={(e) => setInterval(Number(e.target.value))}
               className="w-full bg-[#ffffff] dark:bg-[#131314] border border-black/[0.12] dark:border-white/[0.08] focus:border-[#1a73e8] dark:focus:border-[#a8c7fa] focus:outline-none rounded-xl px-3.5 py-2.5 text-[#1f1f1f] dark:text-[#e3e3e3] text-xs transition duration-150"
@@ -333,6 +383,7 @@ export const SettingsModal = ({
             <div className="space-y-2">
               <label className="font-medium text-[#444746] dark:text-[#c4c7c5]">Conflict Strategy</label>
               <select
+                aria-label="Conflict strategy"
                 value={conflictStrategy}
                 onChange={(e) => setConflictStrategy(e.target.value)}
                 className="w-full bg-[#ffffff] dark:bg-[#131314] border border-black/[0.12] dark:border-white/[0.08] focus:border-[#1a73e8] dark:focus:border-[#a8c7fa] focus:outline-none rounded-xl px-3.5 py-2.5 text-[#1f1f1f] dark:text-[#e3e3e3] text-xs transition duration-150"
@@ -347,6 +398,7 @@ export const SettingsModal = ({
               <label className="font-medium text-[#444746] dark:text-[#c4c7c5]">Duplicate Suffix</label>
               <input
                 type="text"
+                aria-label="Duplicate suffix"
                 value={suffix}
                 onChange={(e) => setSuffix(e.target.value)}
                 className="w-full bg-[#ffffff] dark:bg-[#131314] border border-black/[0.12] dark:border-white/[0.08] focus:border-[#1a73e8] dark:focus:border-[#a8c7fa] focus:outline-none rounded-xl px-3.5 py-2.5 text-[#1f1f1f] dark:text-[#e3e3e3] font-mono text-xs transition duration-150"
@@ -403,18 +455,6 @@ export const SettingsModal = ({
 
           {/* Sync Behavior Checkboxes */}
           <div className="space-y-3 pt-3 border-t border-black/[0.06] dark:border-white/[0.06]">
-            <label className="flex items-center space-x-3 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={syncDesc}
-                onChange={(e) => setSyncDesc(e.target.checked)}
-                className="w-4 h-4 rounded border-black/[0.12] dark:border-white/[0.12] bg-[#ffffff] dark:bg-[#131314] text-[#1a73e8] dark:text-[#a8c7fa] focus:ring-0 cursor-pointer"
-              />
-              <span className="text-[#444746] dark:text-[#c4c7c5]">
-                Generate README.md summaries for folder & topic descriptions
-              </span>
-            </label>
-
             <label className="flex items-center space-x-3 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -498,30 +538,37 @@ export const SettingsModal = ({
           </div>
 
           {/* Footer */}
-          <div className="pt-4 border-t border-black/[0.08] dark:border-white/[0.08] flex items-center justify-end space-x-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2 rounded-full text-[#444746] dark:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#282a2c] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] font-medium text-xs"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center space-x-1.5 px-5 py-2 rounded-full bg-[#1a73e8] dark:bg-[#a8c7fa] hover:bg-[#1765cc] dark:hover:bg-[#c2e7ff] text-[#ffffff] dark:text-[#062e6f] font-medium text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.98]"
-            >
-              {savedSuccess ? (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Saved</span>
-                </>
-              ) : saving ? (
-                <span>Saving…</span>
-              ) : (
-                <span>Save preferences</span>
-              )}
-            </button>
+          <div className="pt-4 border-t border-black/[0.08] dark:border-white/[0.08] space-y-3">
+            {saveError && (
+              <p role="alert" className="text-[11px] text-[#b3261e] dark:text-[#f2b8b5]">
+                {saveError}
+              </p>
+            )}
+            <div className="flex items-center justify-end space-x-2.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 rounded-full text-[#444746] dark:text-[#c4c7c5] hover:bg-[#f0f4f9] dark:hover:bg-[#282a2c] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] font-medium text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex items-center space-x-1.5 px-5 py-2 rounded-full bg-[#1a73e8] dark:bg-[#a8c7fa] hover:bg-[#1765cc] dark:hover:bg-[#c2e7ff] text-[#ffffff] dark:text-[#062e6f] font-medium text-xs transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.98]"
+              >
+                {savedSuccess ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Saved</span>
+                  </>
+                ) : saving ? (
+                  <span>Saving…</span>
+                ) : (
+                  <span>Save preferences</span>
+                )}
+              </button>
+            </div>
           </div>
         </form>
       </div>

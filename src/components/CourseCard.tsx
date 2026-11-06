@@ -35,6 +35,7 @@ export const CourseCard = ({
           <label className="relative inline-flex items-center cursor-pointer shrink-0">
             <input
               type="checkbox"
+              aria-label={`${isEnabled ? "Disable" : "Enable"} synchronization for ${course.name}`}
               checked={isEnabled}
               onChange={(e) => onToggle(course.id, e.target.checked)}
               className="sr-only peer"
@@ -69,7 +70,9 @@ export const CourseCard = ({
 
           {course.home_url && (
             <button
+              type="button"
               onClick={() => onOpenUrl(course.home_url)}
+              aria-label={`Open ${course.name} on Ufora`}
               className="w-7 h-7 rounded-full flex items-center justify-center text-[#747775] dark:text-[#8e918f] hover:text-[#1a73e8] dark:hover:text-[#a8c7fa] hover:bg-[#ffffff] dark:hover:bg-[#282a2c] transition duration-150"
               title="Open course on Ufora"
             >
@@ -94,6 +97,7 @@ export const CourseCard = ({
         <label className="relative inline-flex items-center cursor-pointer shrink-0">
           <input
             type="checkbox"
+            aria-label={`${isEnabled ? "Disable" : "Enable"} synchronization for ${course.name}`}
             checked={isEnabled}
             onChange={(e) => onToggle(course.id, e.target.checked)}
             className="sr-only peer"
@@ -109,8 +113,10 @@ export const CourseCard = ({
             </h3>
             {course.home_url && (
               <button
+                type="button"
                 onClick={() => onOpenUrl(course.home_url)}
-                className="opacity-0 group-hover:opacity-100 transition duration-150 text-[#747775] dark:text-[#8e918f] hover:text-[#1a73e8] dark:hover:text-[#a8c7fa]"
+                aria-label={`Open ${course.name} on Ufora`}
+                className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition duration-150 text-[#747775] dark:text-[#8e918f] hover:text-[#1a73e8] dark:hover:text-[#a8c7fa]"
                 title="Open course on Ufora"
               >
                 <ExternalLink className="w-3.5 h-3.5" />

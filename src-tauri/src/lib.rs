@@ -2,19 +2,34 @@ pub mod api;
 pub mod auth;
 pub mod commands;
 pub mod config;
+pub mod fs_util;
 pub mod manifest;
 pub mod sanitize;
 pub mod sync;
 pub mod tray;
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::Manager;
 
+fn sync_is_due(cfg: &config::AppConfig) -> bool {
+    let Some(last_sync_time) = cfg.last_sync_time.as_deref() else {
+        return true;
+    };
+    let Ok(last_sync_time) = chrono::DateTime::parse_from_rfc3339(last_sync_time) else {
+        return true;
+    };
+    let interval_seconds = cfg.interval_minutes.saturating_mul(60).min(i64::MAX as u64) as i64;
+    chrono::Utc::now()
+        .signed_duration_since(last_sync_time.with_timezone(&chrono::Utc))
+        .num_seconds()
+        >= interval_seconds
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
@@ -23,8 +38,6 @@ pub fn run() {
             tray::show_main(app);
         }))
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_shell::init())
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -36,12 +49,13 @@ pub fn run() {
         .setup(|app| {
             // Sync autostart configuration with system
             let cfg = config::load_config();
-            if cfg.auto_start_tray {
-                use tauri_plugin_autostart::ManagerExt;
-                let manager = app.autolaunch();
-                if !manager.is_enabled().unwrap_or(false) {
-                    let _ = manager.enable();
-                }
+            use tauri_plugin_autostart::ManagerExt;
+            let manager = app.autolaunch();
+            let system_autostart = manager.is_enabled().unwrap_or(false);
+            if cfg.auto_start_tray && !system_autostart {
+                let _ = manager.enable();
+            } else if !cfg.auto_start_tray && system_autostart {
+                let _ = manager.disable();
             }
 
             // Check if launched with --minimized flag (from autostart LaunchAgent)
@@ -138,15 +152,16 @@ pub fn run() {
                 // Initial check after 5 seconds
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 let cfg = config::load_config();
-                let _ = engine_bg.run_sync_pass(&cfg).await;
+                if !engine_bg.is_paused.load(Ordering::Relaxed) && sync_is_due(&cfg) {
+                    let _ = engine_bg.run_sync_pass(&cfg).await;
+                }
 
                 loop {
-                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    tokio::time::sleep(Duration::from_secs(30)).await;
                     let current_cfg = config::load_config();
-                    let interval_secs = current_cfg.interval_minutes * 60;
-                    // Trigger pass if not already syncing
-                    tokio::time::sleep(Duration::from_secs(interval_secs)).await;
-                    let _ = engine_bg.run_sync_pass(&current_cfg).await;
+                    if !engine_bg.is_paused.load(Ordering::Relaxed) && sync_is_due(&current_cfg) {
+                        let _ = engine_bg.run_sync_pass(&current_cfg).await;
+                    }
                 }
             });
 

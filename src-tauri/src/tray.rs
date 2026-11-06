@@ -59,14 +59,24 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
                 let manager = app.autolaunch();
                 let current = manager.is_enabled().unwrap_or(false);
                 let new_state = !current;
-                if new_state {
-                    let _ = manager.enable();
+                let result = if new_state {
+                    manager.enable()
                 } else {
-                    let _ = manager.disable();
+                    manager.disable()
+                };
+                if let Err(error) = result {
+                    if let Some(engine) = app.try_state::<Arc<crate::sync::SyncEngine>>() {
+                        engine.log(&format!("✗ Failed to change autostart setting: {error}"));
+                    }
+                    return;
                 }
-                let mut cfg = crate::config::load_config();
-                cfg.auto_start_tray = new_state;
-                let _ = crate::config::save_config(&cfg);
+                if let Err(error) =
+                    crate::config::update_config(|cfg| cfg.auto_start_tray = new_state)
+                {
+                    if let Some(engine) = app.try_state::<Arc<crate::sync::SyncEngine>>() {
+                        engine.log(&format!("✗ Failed to save autostart setting: {error}"));
+                    }
+                }
                 let _ = update_tray_menu(app);
             }
             "quit" => app.exit(0),

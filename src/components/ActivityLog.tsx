@@ -56,6 +56,7 @@ export const ActivityLog = ({
 
         <div className="flex items-center space-x-2">
           <button
+            type="button"
             onClick={onTogglePause}
             className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-medium bg-[#ffffff] dark:bg-[#282a2c] hover:bg-[#e9eef6] dark:hover:bg-[#37393b] text-[#444746] dark:text-[#c4c7c5] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
           >
@@ -68,7 +69,9 @@ export const ActivityLog = ({
           </button>
 
           <button
+            type="button"
             onClick={() => setAutoScroll(!autoScroll)}
+            aria-pressed={autoScroll}
             className={`px-3 py-1 rounded-full text-[11px] font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
               autoScroll
                 ? "bg-[#1a73e8]/15 dark:bg-[#a8c7fa]/15 text-[#1a73e8] dark:text-[#a8c7fa] border border-[#1a73e8]/20 dark:border-[#a8c7fa]/20"
@@ -79,7 +82,9 @@ export const ActivityLog = ({
           </button>
 
           <button
+            type="button"
             onClick={onClear}
+            aria-label="Clear activity log"
             className="w-7 h-7 rounded-full flex items-center justify-center text-[#747775] dark:text-[#8e918f] hover:text-[#d93025] dark:hover:text-[#f28b82] hover:bg-[#ffffff] dark:hover:bg-[#282a2c] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
             title="Clear logs"
           >

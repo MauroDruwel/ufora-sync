@@ -28,7 +28,6 @@ describe("Type definitions and domain contracts", () => {
       enabled_courses: ["12345"],
       conflict_strategy: "duplicate",
       duplicate_suffix: "_edited",
-      sync_descriptions: true,
       sync_links: true,
       auto_start_tray: true,
     };

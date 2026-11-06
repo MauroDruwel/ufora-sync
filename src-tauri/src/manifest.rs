@@ -1,3 +1,4 @@
+use crate::fs_util;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -42,6 +43,14 @@ impl SyncManifest {
                         let mut files = BTreeMap::new();
                         for (_k, mut entry) in raw.files {
                             let clean_k = normalize_rel_path(&entry.local_path);
+                            if clean_k.is_empty()
+                                || clean_k.contains(':')
+                                || !Path::new(&clean_k)
+                                    .components()
+                                    .all(|part| matches!(part, std::path::Component::Normal(_)))
+                            {
+                                continue;
+                            }
                             entry.local_path = clean_k.clone();
                             files.insert(clean_k, entry);
                         }
@@ -62,7 +71,7 @@ impl SyncManifest {
         ));
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         fs::write(&tmp_path, json).map_err(|e| e.to_string())?;
-        fs::rename(&tmp_path, &manifest_path).map_err(|e| e.to_string())?;
+        fs_util::atomic_replace(&tmp_path, &manifest_path)?;
         Ok(())
     }
 
@@ -98,6 +107,8 @@ impl SyncManifest {
         remote_modified: Option<String>,
     ) {
         let clean_rel = normalize_rel_path(rel_path);
+        self.files
+            .retain(|path, entry| path == &clean_rel || entry.remote_id != remote_id);
         self.files.insert(
             clean_rel.clone(),
             SyncedFile {
@@ -167,13 +178,13 @@ pub fn make_conflict_path(original: &Path, suffix: &str) -> PathBuf {
         return candidate;
     }
 
-    for i in 1..100 {
+    for i in 1u64.. {
         let numbered = parent.join(format!("{stem}{suffix}_{i}{ext}"));
         if !numbered.exists() {
             return numbered;
         }
     }
-    candidate
+    unreachable!("an unused numbered conflict path is always eventually available")
 }
 
 #[cfg(test)]
@@ -193,5 +204,21 @@ mod tests {
         let p = PathBuf::from("/tmp/lecture.pdf");
         let conflict = make_conflict_path(&p, "_edited");
         assert_eq!(conflict, PathBuf::from("/tmp/lecture_edited.pdf"));
+    }
+
+    #[test]
+    fn test_record_moves_remote_id_to_new_local_path() {
+        let mut manifest = SyncManifest::default();
+        manifest.record("topic-1", "Old/file.pdf", "old-sha", None);
+        manifest.record("topic-1", "New/file.pdf", "new-sha", None);
+
+        assert_eq!(manifest.files.len(), 1);
+        assert!(manifest.files.contains_key("New/file.pdf"));
+        assert_eq!(
+            manifest
+                .get_by_remote_id("topic-1")
+                .map(|entry| entry.sha256.as_str()),
+            Some("new-sha")
+        );
     }
 }

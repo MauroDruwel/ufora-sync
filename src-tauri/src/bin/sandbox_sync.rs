@@ -69,6 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             token: &token,
             conflict_strategy: &conflict_strategy,
             duplicate_suffix: "_edited",
+            sync_links: true,
         };
 
         let stats = sync::sync_course_files(&opts, |msg| println!("{msg}")).await?;

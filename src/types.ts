@@ -14,7 +14,6 @@ export interface AppConfig {
   enabled_courses: string[];
   conflict_strategy: string;
   duplicate_suffix: string;
-  sync_descriptions: boolean;
   sync_links: boolean;
   auto_start_tray: boolean;
   last_sync_time?: string | null;

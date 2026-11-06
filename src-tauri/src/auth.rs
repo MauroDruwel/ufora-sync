@@ -1,3 +1,4 @@
+use crate::fs_util;
 use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -399,11 +400,7 @@ fn write_private_file(path: &std::path::Path, contents: &[u8]) -> Result<(), Str
         fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))
             .map_err(|e| format!("Failed to secure auth state: {e}"))?;
     }
-    #[cfg(windows)]
-    if path.exists() {
-        fs::remove_file(path).map_err(|e| format!("Failed to replace auth state: {e}"))?;
-    }
-    fs::rename(&temporary, path).map_err(|e| format!("Failed to save auth state: {e}"))
+    fs_util::atomic_replace(&temporary, path).map_err(|e| format!("Failed to save auth state: {e}"))
 }
 
 fn save_session_cookies(window: &tauri::WebviewWindow) -> Result<usize, String> {
@@ -540,7 +537,7 @@ pub fn is_token_expired(token: &D2lToken) -> bool {
         let now = chrono::Utc::now().timestamp() as f64;
         now >= (exp - 180.0)
     } else {
-        false
+        true
     }
 }
 
@@ -726,13 +723,14 @@ pub fn open_login_window(app: &AppHandle) -> Result<(), String> {
 
 pub fn ensure_authenticated(min_remaining_seconds: f64) -> Result<String, String> {
     let token = read_token()?;
-    if let Some(exp) = token.exp {
-        let now = chrono::Utc::now().timestamp() as f64;
-        if now + min_remaining_seconds >= exp {
-            return Err(
-                "Session expired. Please click 'Log In with UGent' to re-authenticate.".to_string(),
-            );
-        }
+    let Some(exp) = token.exp else {
+        return Err("Session token is invalid. Please sign in again.".to_string());
+    };
+    let now = chrono::Utc::now().timestamp() as f64;
+    if now + min_remaining_seconds >= exp {
+        return Err(
+            "Session expired. Please click 'Log In with UGent' to re-authenticate.".to_string(),
+        );
     }
     Ok(token.token)
 }
@@ -788,6 +786,15 @@ mod tests {
         assert_eq!(tenant, Some("ugent-test".to_string()));
         assert!(token_has_minimum_lifetime(sample, 60.0));
         assert!(!token_has_minimum_lifetime(sample, 10_000_000_000.0));
+
+        let missing_expiry = D2lToken {
+            token: "invalid".to_string(),
+            exp: None,
+            sub: None,
+            tenant: None,
+            captured_at: None,
+        };
+        assert!(is_token_expired(&missing_expiry));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Course, AppConfig, AuthStatus, LogMessage, SyncSummary } from "./types";
@@ -6,6 +6,12 @@ import { Header } from "./components/Header";
 import { CourseCard } from "./components/CourseCard";
 import { ActivityLog } from "./components/ActivityLog";
 import { SettingsModal } from "./components/SettingsModal";
+import {
+  invertCourses,
+  isCourseEnabled,
+  setCourseEnabled,
+  setCoursesEnabled,
+} from "./utils/courseSelection";
 import {
   BookOpen,
   CheckSquare,
@@ -47,6 +53,16 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSelectionMenuOpen, setIsSelectionMenuOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [configSaveError, setConfigSaveError] = useState<string | null>(null);
+  const configSaveQueue = useRef<Promise<void>>(Promise.resolve());
+
+  const persistConfig = (nextConfig: AppConfig): Promise<void> => {
+    const operation = configSaveQueue.current
+      .catch(() => undefined)
+      .then(() => invoke<void>("save_config", { newCfg: nextConfig }));
+    configSaveQueue.current = operation.catch(() => undefined);
+    return operation;
+  };
 
   const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
     if (typeof window !== "undefined") {
@@ -61,6 +77,24 @@ export default function App() {
     if (typeof window !== "undefined") {
       localStorage.setItem("ufora_view_mode", mode);
     }
+  };
+
+  const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    let nextTab: "courses" | "logs" | null = null;
+
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      nextTab = activeTab === "courses" ? "logs" : "courses";
+    } else if (event.key === "Home") {
+      nextTab = "courses";
+    } else if (event.key === "End") {
+      nextTab = "logs";
+    }
+
+    if (!nextTab) return;
+
+    event.preventDefault();
+    setActiveTab(nextTab);
+    requestAnimationFrame(() => document.getElementById(`${nextTab}-tab`)?.focus());
   };
 
   // Dynamic OS Dark/Light theme sync
@@ -80,6 +114,20 @@ export default function App() {
       return () => media.removeEventListener("change", handler);
     }
   }, []);
+
+  useEffect(() => {
+    if (!confirmDialog?.isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setConfirmDialog(null);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [confirmDialog?.isOpen]);
 
   // Load initial data
   useEffect(() => {
@@ -111,7 +159,10 @@ export default function App() {
 
     // Event listeners
     const unlistenLog = listen<LogMessage>("log-message", (event) => {
-      setLogs((prev) => [...prev, `[${event.payload.timestamp}] ${event.payload.message}`]);
+      setLogs((prev) => [
+        ...prev.slice(-499),
+        `[${event.payload.timestamp}] ${event.payload.message}`,
+      ]);
     });
 
     const unlistenStatus = listen<string>("sync-status", async (event) => {
@@ -199,45 +250,67 @@ export default function App() {
 
   const handleToggleCourse = async (courseId: string, enabled: boolean) => {
     if (!config) return;
-    const set = new Set(config.enabled_courses);
-    if (enabled) {
-      set.add(courseId);
-    } else {
-      set.delete(courseId);
-    }
-    const updated = { ...config, enabled_courses: Array.from(set) };
+    const updated = {
+      ...config,
+      enabled_courses: setCourseEnabled(
+        config.enabled_courses,
+        courses.map((course) => course.id),
+        courseId,
+        enabled,
+      ),
+    };
+    setConfigSaveError(null);
     setConfig(updated);
-    await invoke("save_config", { newCfg: updated });
+    try {
+      await persistConfig(updated);
+    } catch (err) {
+      console.error("Failed to save course selection:", err);
+      setConfig((current) => (current === updated ? config : current));
+      setConfigSaveError("Could not save the course selection. Your previous selection was restored.");
+    }
   };
 
   const handleSelectVisible = async (enable: boolean) => {
     if (!config) return;
-    const set = new Set(config.enabled_courses);
-    for (const c of filteredCourses) {
-      if (enable) {
-        set.add(c.id);
-      } else {
-        set.delete(c.id);
-      }
-    }
-    const updated = { ...config, enabled_courses: Array.from(set) };
+    const updated = {
+      ...config,
+      enabled_courses: setCoursesEnabled(
+        config.enabled_courses,
+        courses.map((course) => course.id),
+        filteredCourses.map((course) => course.id),
+        enable,
+      ),
+    };
+    setConfigSaveError(null);
     setConfig(updated);
-    await invoke("save_config", { newCfg: updated });
+    try {
+      await persistConfig(updated);
+    } catch (err) {
+      console.error("Failed to save visible course selection:", err);
+      setConfig((current) => (current === updated ? config : current));
+      setConfigSaveError("Could not save the course selection. Your previous selection was restored.");
+    }
   };
 
   const handleInvertVisible = async () => {
     if (!config) return;
-    const currentSet = new Set(config.enabled_courses);
-    for (const c of filteredCourses) {
-      if (currentSet.has(c.id)) {
-        currentSet.delete(c.id);
-      } else {
-        currentSet.add(c.id);
-      }
-    }
-    const updated = { ...config, enabled_courses: Array.from(currentSet) };
+    const updated = {
+      ...config,
+      enabled_courses: invertCourses(
+        config.enabled_courses,
+        courses.map((course) => course.id),
+        filteredCourses.map((course) => course.id),
+      ),
+    };
+    setConfigSaveError(null);
     setConfig(updated);
-    await invoke("save_config", { newCfg: updated });
+    try {
+      await persistConfig(updated);
+    } catch (err) {
+      console.error("Failed to invert visible course selection:", err);
+      setConfig((current) => (current === updated ? config : current));
+      setConfigSaveError("Could not save the course selection. Your previous selection was restored.");
+    }
   };
 
   const promptSelectVisible = () => {
@@ -269,8 +342,14 @@ export default function App() {
   };
 
   const handleSaveSettings = async (newCfg: AppConfig) => {
-    setConfig(newCfg);
-    await invoke("save_config", { newCfg });
+    setConfigSaveError(null);
+    try {
+      await persistConfig(newCfg);
+      setConfig(newCfg);
+    } catch (err) {
+      console.error("Failed to save settings:", err);
+      throw err;
+    }
   };
 
   const handleSyncNow = async () => {
@@ -309,7 +388,7 @@ export default function App() {
 
   const handleOpenSyncFolder = async () => {
     if (config) {
-      await invoke("open_folder", { path: config.sync_dir });
+      await invoke("open_folder");
     }
   };
 
@@ -363,8 +442,8 @@ export default function App() {
     );
   }
 
-  const enabledVisibleCount = filteredCourses.filter((c) =>
-    config.enabled_courses.length === 0 || config.enabled_courses.includes(c.id)
+  const enabledVisibleCount = filteredCourses.filter((course) =>
+    isCourseEnabled(config.enabled_courses, course.id),
   ).length;
 
   return (
@@ -384,9 +463,16 @@ export default function App() {
 
       {/* Tabs & Controls Toolbar (Clean Google Gemini style, no clutter) */}
       <div className="flex items-center justify-between px-6 py-2.5 border-b border-black/[0.08] dark:border-white/[0.08] bg-[#ffffff] dark:bg-[#131314] transition-colors duration-150">
-        <div className="flex items-center space-x-1.5">
+        <div className="flex items-center space-x-1.5" role="tablist" aria-label="Main sections">
           <button
+            id="courses-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "courses"}
+            aria-controls="courses-panel"
+            tabIndex={activeTab === "courses" ? 0 : -1}
             onClick={() => setActiveTab("courses")}
+            onKeyDown={handleTabKeyDown}
             className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
               activeTab === "courses"
                 ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
@@ -396,7 +482,14 @@ export default function App() {
             Courses ({displayedCourses.length})
           </button>
           <button
+            id="logs-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "logs"}
+            aria-controls="logs-panel"
+            tabIndex={activeTab === "logs" ? 0 : -1}
             onClick={() => setActiveTab("logs")}
+            onKeyDown={handleTabKeyDown}
             className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] flex items-center space-x-2 ${
               activeTab === "logs"
                 ? "bg-[#e9eef6] dark:bg-[#282a2c] text-[#1f1f1f] dark:text-[#e3e3e3]"
@@ -417,6 +510,7 @@ export default function App() {
               <Search className="w-3.5 h-3.5 absolute left-2.5 text-[#747775] dark:text-[#8e918f] pointer-events-none" />
               <input
                 type="text"
+                aria-label="Filter courses"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter courses…"
@@ -424,9 +518,11 @@ export default function App() {
               />
               {searchQuery && (
                 <button
+                  type="button"
                   onClick={() => setSearchQuery("")}
                   className="absolute right-2 text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
                   title="Clear filter"
+                  aria-label="Clear course filter"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -436,6 +532,7 @@ export default function App() {
             {/* View Mode Toggle */}
             <div className="flex items-center p-0.5 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08]">
               <button
+                type="button"
                 onClick={() => toggleViewMode("grid")}
                 className={`p-1.5 rounded-full transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
                   viewMode === "grid"
@@ -443,10 +540,13 @@ export default function App() {
                     : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
                 }`}
                 title="Grid view"
+                aria-label="Grid view"
+                aria-pressed={viewMode === "grid"}
               >
                 <LayoutGrid className="w-3.5 h-3.5" />
               </button>
               <button
+                type="button"
                 onClick={() => toggleViewMode("list")}
                 className={`p-1.5 rounded-full transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] ${
                   viewMode === "list"
@@ -454,6 +554,8 @@ export default function App() {
                     : "text-[#747775] dark:text-[#8e918f] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3]"
                 }`}
                 title="List view"
+                aria-label="List view"
+                aria-pressed={viewMode === "list"}
               >
                 <List className="w-3.5 h-3.5" />
               </button>
@@ -462,7 +564,11 @@ export default function App() {
             {/* Safe Batch Selection Menu */}
             <div className="relative border-l border-black/[0.08] dark:border-white/[0.08] pl-3">
               <button
+                type="button"
                 onClick={() => setIsSelectionMenuOpen((prev) => !prev)}
+                aria-label="Manage course synchronization selection"
+                aria-haspopup="menu"
+                aria-expanded={isSelectionMenuOpen}
                 className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[#f0f4f9] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] border border-black/[0.08] dark:border-white/[0.08] transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
                 title="Manage course synchronization selection"
               >
@@ -483,6 +589,7 @@ export default function App() {
                   />
                   <div className="absolute right-0 mt-1.5 w-52 bg-[#ffffff] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] rounded-2xl shadow-xl z-50 p-1.5 text-xs animate-in fade-in zoom-in-95 duration-100">
                     <button
+                      type="button"
                       onClick={() => {
                         setIsSelectionMenuOpen(false);
                         promptSelectVisible();
@@ -493,6 +600,7 @@ export default function App() {
                       <span>Enable Visible ({filteredCourses.length})</span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         setIsSelectionMenuOpen(false);
                         promptDeselectVisible();
@@ -504,6 +612,7 @@ export default function App() {
                     </button>
                     <div className="my-1 border-t border-black/[0.06] dark:border-white/[0.06]" />
                     <button
+                      type="button"
                       onClick={() => {
                         setIsSelectionMenuOpen(false);
                         handleInvertVisible();
@@ -521,10 +630,31 @@ export default function App() {
         )}
       </div>
 
+      {configSaveError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 px-6 py-2 bg-[#fce8e6] dark:bg-[#3c1f1e] text-[#b3261e] dark:text-[#f2b8b5] text-xs border-b border-[#b3261e]/20"
+        >
+          <span>{configSaveError}</span>
+          <button
+            type="button"
+            onClick={() => setConfigSaveError(null)}
+            className="font-medium hover:underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Main Body */}
       <main className="flex-1 overflow-hidden p-6">
         {activeTab === "courses" ? (
-          <div className="h-full overflow-y-auto pr-1">
+          <div
+            id="courses-panel"
+            role="tabpanel"
+            aria-labelledby="courses-tab"
+            className="h-full overflow-y-auto pr-1"
+          >
             {isLoadingCourses ? (
               <div className="flex flex-col items-center justify-center h-64 space-y-3 text-[#747775] dark:text-[#8e918f]">
                 <RefreshCcw className="w-5 h-5 animate-spin text-[#1a73e8] dark:text-[#a8c7fa]" />
@@ -609,7 +739,7 @@ export default function App() {
                     key={course.id}
                     course={course}
                     viewMode={viewMode}
-                    isEnabled={config.enabled_courses.length === 0 || config.enabled_courses.includes(course.id)}
+                    isEnabled={isCourseEnabled(config.enabled_courses, course.id)}
                     onToggle={handleToggleCourse}
                     onOpenFolder={handleOpenCourseFolder}
                     onOpenUrl={handleOpenUrl}
@@ -619,19 +749,32 @@ export default function App() {
             )}
           </div>
         ) : (
-          <ActivityLog
-            logs={logs}
-            isPaused={syncStatus === "paused"}
-            onClear={() => setLogs([])}
-            onTogglePause={handleTogglePause}
-          />
+          <div
+            id="logs-panel"
+            role="tabpanel"
+            aria-labelledby="logs-tab"
+            className="h-full"
+          >
+            <ActivityLog
+              logs={logs}
+              isPaused={syncStatus === "paused"}
+              onClear={() => setLogs([])}
+              onTogglePause={handleTogglePause}
+            />
+          </div>
         )}
       </main>
 
       {/* Confirmation Modal */}
       {confirmDialog && confirmDialog.isOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 dark:bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-[#ffffff] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="course-selection-dialog-title"
+            aria-describedby="course-selection-dialog-description"
+            className="bg-[#ffffff] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4"
+          >
             <div className="flex items-center space-x-3">
               <div
                 className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
@@ -647,7 +790,10 @@ export default function App() {
                 )}
               </div>
               <div>
-                <h3 className="font-medium text-sm text-[#1f1f1f] dark:text-[#e3e3e3]">
+                <h3
+                  id="course-selection-dialog-title"
+                  className="font-medium text-sm text-[#1f1f1f] dark:text-[#e3e3e3]"
+                >
                   {confirmDialog.title}
                 </h3>
                 <p className="text-[11px] text-[#747775] dark:text-[#8e918f]">
@@ -656,13 +802,17 @@ export default function App() {
               </div>
             </div>
 
-            <p className="text-xs text-[#444746] dark:text-[#c4c7c5] leading-relaxed">
+            <p
+              id="course-selection-dialog-description"
+              className="text-xs text-[#444746] dark:text-[#c4c7c5] leading-relaxed"
+            >
               {confirmDialog.message}
             </p>
 
             <div className="flex items-center justify-end space-x-2 pt-2">
               <button
                 type="button"
+                autoFocus
                 onClick={() => setConfirmDialog(null)}
                 className="px-4 py-2 rounded-full text-xs font-medium text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] hover:bg-[#f0f4f9] dark:hover:bg-[#282a2c] transition duration-150"
               >

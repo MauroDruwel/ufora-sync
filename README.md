@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/MauroDruwel/ufora-sync/releases"><img src="https://img.shields.io/github/v/release/MauroDruwel/ufora-sync?color=2563eb&label=version" alt="Latest Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
-  <a href="https://github.com/MauroDruwel/quality-gate"><img src="https://img.shields.io/badge/Mauro%20Quality%20Gate-Passed-16a34a?style=flat&logo=github" alt="MQG Passed" /></a>
+  <a href="https://github.com/MauroDruwel/ufora-sync/actions/workflows/ci.yml"><img src="https://github.com/MauroDruwel/ufora-sync/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-neutral" alt="Cross-Platform" />
 </p>
 
@@ -35,7 +35,7 @@ No command line required. Just download, open, and log in with your UGent accoun
 
 | Platform | Download Link | Notes |
 | :--- | :--- | :--- |
-| 🍏 **macOS** | **[Download .dmg](https://github.com/MauroDruwel/ufora-sync/releases/latest)** | Apple Silicon (M1–M4) & Intel |
+| 🍏 **macOS** | **[Download .dmg](https://github.com/MauroDruwel/ufora-sync/releases/latest)** | Apple Silicon & Intel |
 | 🪟 **Windows** | **[Download .msi](https://github.com/MauroDruwel/ufora-sync/releases/latest)** | Windows 10 / 11 (x64) |
 | 🐧 **Linux** | **[Download .AppImage](https://github.com/MauroDruwel/ufora-sync/releases/latest)** | Ubuntu, Fedora, Arch, Debian |
 
@@ -46,13 +46,13 @@ No command line required. Just download, open, and log in with your UGent accoun
 ## ✨ What makes it actually good?
 
 - ⚡ **Lightweight & Native (Rust + Tauri v2)**  
-  Built with Rust instead of a 400 MB Electron browser wrapper. It consumes less than 15 MB of RAM and 0% CPU when idle. Your laptop battery won't even notice it's running.
+  Built with Rust and the operating system webview instead of bundling a full browser engine. Background polling stays idle between sync checks.
 
-- ✍️ **Never overwrites your notes**  
-  Took handwritten Apple Pencil notes or typed annotations onto a slide deck? Ufora Sync detects local changes and stashes them safely (`Les1_annotated.pdf`) while grabbing the latest version from the prof. Your notes never disappear.
+- ✍️ **Protects your notes by default**<br>
+  Took handwritten Apple Pencil notes or typed annotations onto a slide deck? The default conflict strategy detects local changes and preserves them (`Les1_edited.pdf`) while grabbing the latest version from the prof. An explicit overwrite mode remains available in Settings.
 
 - 🧹 **No 60-course clutter**  
-  UGent Brightspace loves showing courses from 3 years ago, dead group pages, and random faculty portals. Ufora Sync automatically focuses on your **current active semester courses**, with easy toggles in Settings if you ever need an old archive.
+  UGent Brightspace loves showing courses from 3 years ago, dead group pages, and random faculty portals. Ufora Sync automatically focuses on your **current academic-year courses**, with easy toggles in Settings if you ever need an old archive.
 
 - ☁️ **OneDrive-friendly (Files On-Demand aware)**  
   If you sync into `OneDrive - UGent` and use *"Free Up Space"*, Ufora Sync won't force OneDrive to redownload your whole disk just to check if files changed.

@@ -65,6 +65,7 @@ export const Header = ({
     dotColor = "bg-[#6dd58c]";
     statusLabel = formatRelativeSyncTime(lastSyncTime, now);
   }
+  const statusIsActionable = (!isAuthenticated || status === "error") && Boolean(onLogin);
 
   return (
     <header
@@ -79,22 +80,25 @@ export const Header = ({
       {/* Right side: Dynamic status pill + Action buttons */}
       <div className="flex items-center space-x-2.5">
         {/* Dynamic Status Pill */}
-        <div
-          onClick={(!isAuthenticated || status === "error") && onLogin ? onLogin : undefined}
+        <button
+          type="button"
+          onClick={statusIsActionable ? onLogin : undefined}
+          disabled={!statusIsActionable}
+          aria-label={statusIsActionable ? `${statusLabel}. Sign in to resolve.` : statusLabel}
           className={`flex items-center space-x-2 px-3 py-1 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] border border-black/[0.08] dark:border-white/[0.08] text-xs font-medium text-[#444746] dark:text-[#c4c7c5] transition-colors duration-150 ${
-            (!isAuthenticated || status === "error") && onLogin
+            statusIsActionable
               ? "cursor-pointer hover:bg-[#e9eef6] dark:hover:bg-[#282a2c]"
-              : ""
+              : "cursor-default"
           }`}
           title={
-            (!isAuthenticated || status === "error") && onLogin
+            statusIsActionable
               ? `${statusLabel} — Click to sign in`
               : statusLabel
           }
         >
-          <span className={`w-2 h-2 rounded-full shrink-0 transition-colors duration-200 ${dotColor}`} />
+          <span aria-hidden="true" className={`w-2 h-2 rounded-full shrink-0 transition-colors duration-200 ${dotColor}`} />
           <span className="tracking-tight">{statusLabel}</span>
-        </div>
+        </button>
 
         {!isAuthenticated && onLogin && (
           <button
@@ -126,7 +130,9 @@ export const Header = ({
         </button>
 
         <button
+          type="button"
           onClick={onOpenSyncFolder}
+          aria-label="Open root sync folder"
           className="w-8 h-8 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] border border-black/[0.08] dark:border-white/[0.08] flex items-center justify-center transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
           title="Open root sync folder in file manager"
         >
@@ -134,7 +140,9 @@ export const Header = ({
         </button>
 
         <button
+          type="button"
           onClick={onOpenUforaWeb}
+          aria-label="Open UGent Ufora in browser"
           className="w-8 h-8 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] border border-black/[0.08] dark:border-white/[0.08] flex items-center justify-center transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
           title="Open UGent Ufora in browser"
         >
@@ -142,7 +150,9 @@ export const Header = ({
         </button>
 
         <button
+          type="button"
           onClick={onOpenSettings}
+          aria-label="Open preferences and settings"
           className="w-8 h-8 rounded-full bg-[#f0f4f9] dark:bg-[#1e1f20] hover:bg-[#e9eef6] dark:hover:bg-[#282a2c] text-[#444746] dark:text-[#c4c7c5] hover:text-[#1f1f1f] dark:hover:text-[#e3e3e3] border border-black/[0.08] dark:border-white/[0.08] flex items-center justify-center transition duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]"
           title="Open Preferences & Settings"
         >
