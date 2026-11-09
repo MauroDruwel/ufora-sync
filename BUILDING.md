@@ -42,6 +42,10 @@ pnpm run typecheck
 pnpm test
 pnpm run build
 
+# Browser E2E (Chromium; no UGent credentials needed)
+pnpm exec playwright install chromium
+pnpm run test:e2e
+
 # Rust backend formatting, checks, clippy, and tests
 cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
 cargo check --manifest-path src-tauri/Cargo.toml --all-targets --locked
@@ -50,6 +54,9 @@ cargo test --manifest-path src-tauri/Cargo.toml --all-targets --locked
 ```
 
 ---
+
+The Playwright suite runs the real frontend in Chromium with mocked Tauri
+commands and events. It does not launch the native desktop shell or contact Ufora.
 
 ## 📦 Production Builds
 

@@ -2,6 +2,7 @@ import { useState, useEffect, FormEvent } from "react";
 import packageJson from "../../package.json";
 import { AppConfig, AuthStatus, UpdateInfo } from "../types";
 import { invoke } from "@tauri-apps/api/core";
+import { checkForUpdates } from "../utils/appUpdates";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { enable as enableAutostart, disable as disableAutostart } from "@tauri-apps/plugin-autostart";
 import {
@@ -126,9 +127,10 @@ export const SettingsModal = ({
 
   const handleCheckUpdates = async () => {
     setIsCheckingUpdate(true);
+    setUpdateInfo(null);
     setUpdateStatusMessage(null);
     try {
-      const info: UpdateInfo = await invoke("check_for_updates");
+      const info = await checkForUpdates();
       setUpdateInfo(info);
       if (info.has_update) {
         setUpdateStatusMessage(`New release available: v${info.latest_version}`);
@@ -503,7 +505,7 @@ export const SettingsModal = ({
                 Mauro Druwel · MIT License
               </p>
               {updateStatusMessage && (
-                <p className="text-[11px] text-[#1a73e8] dark:text-[#a8c7fa] pt-0.5">
+                <p role="status" className="text-[11px] text-[#1a73e8] dark:text-[#a8c7fa] pt-0.5">
                   {updateStatusMessage}
                 </p>
               )}
@@ -519,7 +521,7 @@ export const SettingsModal = ({
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span>View Release v{updateInfo.latest_version}</span>
                 </button>
-              ) : (
+              ) : null}
                 <button
                   type="button"
                   onClick={handleCheckUpdates}
@@ -533,7 +535,6 @@ export const SettingsModal = ({
                   />
                   <span>{isCheckingUpdate ? "Checking…" : "Check for Updates"}</span>
                 </button>
-              )}
             </div>
           </div>
 

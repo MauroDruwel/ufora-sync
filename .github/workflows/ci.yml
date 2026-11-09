@@ -55,6 +55,12 @@ jobs:
       - name: Build production frontend
         run: pnpm run build
 
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run browser end-to-end tests
+        run: pnpm run test:e2e
+
   rust:
     name: Rust checks
     runs-on: ubuntu-24.04

@@ -213,26 +213,13 @@ pub struct UpdateInfo {
 }
 
 pub fn is_newer_version(latest_tag: &str, current_ver: &str) -> bool {
-    let parse = |v: &str| -> Vec<u64> {
-        v.trim_start_matches('v')
-            .split(['.', '-', '+'])
-            .filter_map(|s| s.parse::<u64>().ok())
-            .collect()
+    let (Ok(latest), Ok(current)) = (
+        semver::Version::parse(latest_tag.trim_start_matches('v')),
+        semver::Version::parse(current_ver),
+    ) else {
+        return false;
     };
-    let latest = parse(latest_tag);
-    let current = parse(current_ver);
-
-    let max_len = latest.len().max(current.len());
-    for i in 0..max_len {
-        let l = latest.get(i).copied().unwrap_or(0);
-        let c = current.get(i).copied().unwrap_or(0);
-        if l > c {
-            return true;
-        } else if l < c {
-            return false;
-        }
-    }
-    false
+    latest.pre.is_empty() && latest.cmp_precedence(&current).is_gt()
 }
 
 #[tauri::command]
@@ -240,7 +227,7 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
     let current_version = env!("CARGO_PKG_VERSION").to_string();
     let client = reqwest::Client::builder()
         .user_agent(format!("ufora-sync/{}", current_version))
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -260,11 +247,9 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
     let json: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
     let raw_tag = json.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
     let tag = raw_tag.trim_start_matches('v').to_string();
-    let html_url = json
-        .get("html_url")
-        .and_then(|v| v.as_str())
-        .unwrap_or("https://github.com/MauroDruwel/ufora-sync/releases")
-        .to_string();
+    semver::Version::parse(&tag)
+        .map_err(|_| "GitHub returned an invalid release version".to_string())?;
+    let html_url = format!("https://github.com/MauroDruwel/ufora-sync/releases/tag/{raw_tag}");
     let release_notes = json
         .get("body")
         .and_then(|v| v.as_str())
@@ -278,11 +263,7 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
 
     Ok(UpdateInfo {
         current_version,
-        latest_version: if tag.is_empty() {
-            env!("CARGO_PKG_VERSION").to_string()
-        } else {
-            tag
-        },
+        latest_version: tag,
         has_update,
         release_notes,
         html_url,
@@ -302,6 +283,9 @@ mod tests {
         assert!(is_newer_version("1.0.1", "1.0.0"));
         assert!(is_newer_version("v1.1.0", "1.0.0"));
         assert!(is_newer_version("2.0.0", "1.0.0"));
+        assert!(!is_newer_version("2.0.0-rc.1", "1.0.0"));
+        assert!(is_newer_version("1.0.0", "1.0.0-rc.1"));
+        assert!(!is_newer_version("1.0.0+build.9", "1.0.0"));
     }
 
     #[test]

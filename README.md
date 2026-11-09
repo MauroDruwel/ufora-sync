@@ -41,6 +41,9 @@ No command line required. Just download, open, and log in with your UGent accoun
 
 *Prefer building it yourself? See [BUILDING.md](BUILDING.md).*
 
+Ufora Sync checks for updates in the background on launch. You can also check
+under **Settings → Software Updates**.
+
 ---
 
 ## ✨ What makes it actually good?

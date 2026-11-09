@@ -6,6 +6,7 @@ import { Header } from "./components/Header";
 import { CourseCard } from "./components/CourseCard";
 import { ActivityLog } from "./components/ActivityLog";
 import { SettingsModal } from "./components/SettingsModal";
+import { useStartupUpdate } from "./utils/appUpdates";
 import {
   invertCourses,
   isCourseEnabled,
@@ -39,6 +40,7 @@ interface ConfirmDialogState {
 }
 
 export default function App() {
+  const { update, dismissUpdate } = useStartupUpdate();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [authStatus, setAuthStatus] = useState<AuthStatus>({
@@ -460,6 +462,14 @@ export default function App() {
         onOpenSyncFolder={handleOpenSyncFolder}
         onOpenUforaWeb={() => handleOpenUrl("https://ufora.ugent.be")}
       />
+
+      {update && (
+        <div className="flex items-center gap-3 px-6 py-2 text-xs border-b border-black/10 bg-[#e9eef6] dark:bg-[#282a2c]">
+          <span role="status" className="flex-1">Ufora Sync v{update.latest_version} is available.</span>
+          <button type="button" className="underline" onClick={() => void handleOpenUrl(update.html_url)}>View Release</button>
+          <button type="button" aria-label="Dismiss update notice" onClick={dismissUpdate}>Dismiss</button>
+        </div>
+      )}
 
       {/* Tabs & Controls Toolbar (Clean Google Gemini style, no clutter) */}
       <div className="flex items-center justify-between px-6 py-2.5 border-b border-black/[0.08] dark:border-white/[0.08] bg-[#ffffff] dark:bg-[#131314] transition-colors duration-150">
